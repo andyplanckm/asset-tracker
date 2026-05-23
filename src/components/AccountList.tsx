@@ -8,7 +8,11 @@ import RecordBalanceModal from './RecordBalanceModal'
 import TrendChart from './TrendChart'
 import BalanceHistory from './BalanceHistory'
 
-export default function AccountList() {
+interface Props {
+  onRecorded: () => void
+}
+
+export default function AccountList({ onRecorded }: Props) {
   const [accounts, setAccounts] = useState<(Account & { latest_balance: number | null })[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -249,7 +253,7 @@ export default function AccountList() {
         <RecordBalanceModal
           account={recordAccount}
           onClose={() => setRecordAccount(null)}
-          onSaved={() => { setRecordAccount(null); loadAccounts() }}
+          onSaved={() => { setRecordAccount(null); loadAccounts(); onRecorded() }}
         />
       )}
       {historyAccount && (

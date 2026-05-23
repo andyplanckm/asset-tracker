@@ -9,8 +9,14 @@ interface Props {
   onSaved: () => void
 }
 
+function todayStr() {
+  const d = new Date()
+  return d.toISOString().slice(0, 10)
+}
+
 export default function RecordBalanceModal({ account, onClose, onSaved }: Props) {
   const [amount, setAmount] = useState('')
+  const [date, setDate] = useState(todayStr())
   const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
@@ -21,11 +27,16 @@ export default function RecordBalanceModal({ account, onClose, onSaved }: Props)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
+    // 使用选定的日期 + 当前时间
+    const now = new Date()
+    const [y, m, d] = date.split('-').map(Number)
+    const recordedAt = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds())
+
     await supabase.from('balances').insert({
       user_id: user.id,
       account_id: account.id,
       amount: num,
-      recorded_at: new Date().toISOString(),
+      recorded_at: recordedAt.toISOString(),
     })
 
     setSaving(false)
@@ -63,6 +74,18 @@ export default function RecordBalanceModal({ account, onClose, onSaved }: Props)
                 autoFocus
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              记录日期
+            </label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
           </div>
 
           <button

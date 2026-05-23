@@ -11,16 +11,18 @@ interface OverviewData {
   netWorth: number
 }
 
-export default function Dashboard() {
+interface Props {
+  refreshKey: number
+}
+
+export default function Dashboard({ refreshKey }: Props) {
   const [data, setData] = useState<OverviewData>({
     totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0,
   })
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
-
   useEffect(() => {
     loadOverview()
-  }, [])
+  }, [refreshKey])
 
   const loadOverview = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -33,10 +35,7 @@ export default function Dashboard() {
       .returns<Account[]>()
 
     setAccounts(accountsData || [])
-    if (!accountsData || accountsData.length === 0) {
-      setLoading(false)
-      return
-    }
+    if (!accountsData || accountsData.length === 0) return
 
     const accountIds = accountsData.map(a => a.id)
     const { data: balances } = await supabase
@@ -48,7 +47,6 @@ export default function Dashboard() {
 
     if (!balances || balances.length === 0) {
       setData({ totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0 })
-      setLoading(false)
       return
     }
 
@@ -73,7 +71,6 @@ export default function Dashboard() {
       totalLiabilities,
       netWorth: totalAssets + totalInvestments - totalLiabilities,
     })
-    setLoading(false)
   }
 
   const cards = [
@@ -86,8 +83,6 @@ export default function Dashboard() {
   const formatMoney = (v: number) => {
     return v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
-
-  if (loading) return null
 
   return (
     <div>
@@ -106,18 +101,19 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
-      <OverviewTrends accounts={accounts} />
+      <OverviewTrends accounts={accounts} refreshKey={refreshKey} />
     </div>
   )
 }
 
-function OverviewTrends({ accounts }: { accounts: Account[] }) {
+function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refreshKey: number }) {
   const [chartData, setChartData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [scaleMode, setScaleMode] = useState<'adaptive' | 'zero'>('adaptive')
 
   useEffect(() => {
     loadTrendData()
-  }, [accounts])
+  }, [accounts, refreshKey])
 
   const loadTrendData = async () => {
     if (accounts.length === 0) { setLoading(false); return }
@@ -134,9 +130,15 @@ function OverviewTrends({ accounts }: { accounts: Account[] }) {
 
     const accountTypeMap = new Map(accounts.map(a => [a.id, a.type]))
     const currentAmounts = new Map<string, number>()
+    const data: any[] = []
 
-    // Build data point for each balance record (chronologically)
-    const data: any[] = balances.map(b => {
+    const BUCKET_MS = 5 * 60 * 1000
+    let currentBucket = ''
+    let bucketAmounts: { assets: number; investments: number; liabilities: number; _ts: number } | null = null
+
+    balances.forEach((b, i) => {
+      const ts = new Date(b.recorded_at).getTime()
+      const bucket = Math.floor(ts / BUCKET_MS).toString()
       currentAmounts.set(b.account_id, b.amount)
 
       let assets = 0, investments = 0, liabilities = 0
@@ -147,12 +149,29 @@ function OverviewTrends({ accounts }: { accounts: Account[] }) {
         else liabilities += amount
       })
 
-      return {
-        time: new Date(b.recorded_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        资产: assets,
-        投资: investments,
-        负债: liabilities,
-        净资产: assets + investments - liabilities,
+      if (bucket !== currentBucket) {
+        if (bucketAmounts) {
+          data.push({
+            _ts: Number(currentBucket) * BUCKET_MS,
+            资产: bucketAmounts.assets,
+            投资: bucketAmounts.investments,
+            负债: bucketAmounts.liabilities,
+            净资产: bucketAmounts.assets + bucketAmounts.investments - bucketAmounts.liabilities,
+          })
+        }
+        currentBucket = bucket
+      }
+
+      bucketAmounts = { assets, investments, liabilities, _ts: Number(bucket) * BUCKET_MS }
+
+      if (i === balances.length - 1 && bucketAmounts) {
+        data.push({
+          _ts: bucketAmounts._ts,
+          资产: bucketAmounts.assets,
+          投资: bucketAmounts.investments,
+          负债: bucketAmounts.liabilities,
+          净资产: bucketAmounts.assets + bucketAmounts.investments - bucketAmounts.liabilities,
+        })
       }
     })
 
@@ -162,25 +181,68 @@ function OverviewTrends({ accounts }: { accounts: Account[] }) {
 
   if (loading || chartData.length === 0) return null
 
+  // Compute Y domain
+  const allValues = chartData.flatMap(d => [d.资产, d.投资, d.负债, d.净资产])
+  const dataMin = Math.min(...allValues)
+  const dataMax = Math.max(...allValues)
+  const range = dataMax - dataMin || 1
+  const padding = range * 0.15
+  const yDomain: [number, number] = scaleMode === 'adaptive'
+    ? [dataMin - padding, dataMax + padding]
+    : [0, dataMax + padding]
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
-      <h3 className="text-sm font-semibold text-gray-600 mb-4">资产变化趋势</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-gray-600">资产变化趋势</h3>
+        <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
+          <button
+            onClick={() => setScaleMode('adaptive')}
+            className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'adaptive' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+          >
+            自适应
+          </button>
+          <button
+            onClick={() => setScaleMode('zero')}
+            className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'zero' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+          >
+            从零开始
+          </button>
+        </div>
+      </div>
       <div className="h-64">
-        <TrendChartContent data={chartData} />
+        <TrendChartContent data={chartData} yDomain={yDomain} />
       </div>
     </div>
   )
 }
 
-function TrendChartContent({ data }: { data: any[] }) {
+function TrendChartContent({ data, yDomain }: { data: any[]; yDomain: [number, number] }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-        <XAxis dataKey="time" tick={{ fontSize: 11 }} stroke="#c4b5e0" />
-        <YAxis tick={{ fontSize: 11 }} stroke="#c4b5e0" tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`} width={50} />
+        <XAxis
+          dataKey="_ts"
+          type="number"
+          domain={['dataMin', 'dataMax']}
+          tick={{ fontSize: 11 }}
+          stroke="#c4b5e0"
+          tickFormatter={(ts: number) => {
+            const d = new Date(ts)
+            return `${d.getMonth() + 1}/${d.getDate()}`
+          }}
+        />
+        <YAxis
+          domain={yDomain}
+          tick={{ fontSize: 11 }}
+          stroke="#c4b5e0"
+          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`}
+          width={50}
+        />
         <Tooltip
           formatter={(value, name) => [`¥${Number(value).toLocaleString()}`, name]}
+          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
           contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px' }}
         />
         <Legend />
