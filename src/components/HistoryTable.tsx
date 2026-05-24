@@ -134,7 +134,7 @@ export default function HistoryTable({ onRecorded }: Props) {
 
   // Group accounts by type for column headers
   const accountGroups = [
-    { type: 'asset' as const, label: '资产', accounts: accounts.filter(a => a.type === 'asset') },
+    { type: 'asset' as const, label: '灵活取用', accounts: accounts.filter(a => a.type === 'asset') },
     { type: 'investment' as const, label: '投资', accounts: accounts.filter(a => a.type === 'investment') },
     { type: 'liability' as const, label: '负债', accounts: accounts.filter(a => a.type === 'liability') },
   ].filter(g => g.accounts.length > 0)
@@ -158,7 +158,7 @@ export default function HistoryTable({ onRecorded }: Props) {
                     colSpan={g.accounts.length}
                     className={`px-2 py-2 text-center text-xs font-semibold border-r border-gray-100 ${typeColorClass(g.type)} ${typeBgClass(g.type)}`}
                   >
-                    总{g.label}（{g.accounts.length}个账户）
+                    {g.type === 'asset' ? g.label : `总${g.label}`}（{g.accounts.length}个账户）
                   </th>
                 ))}
                 <th className="px-3 py-2 text-center text-xs font-semibold text-blue-500 bg-blue-50 whitespace-nowrap">
@@ -219,7 +219,7 @@ export default function HistoryTable({ onRecorded }: Props) {
                               onClick={() => startEdit(row.date, acc.id, cell?.amount ?? null)}
                               title="点击编辑"
                             >
-                              {cell && cell.amount !== null ? `¥${cell.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}` : '-'}
+                              {cell && cell.amount !== null ? `¥${cell.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}` : '¥0.00'}
                             </span>
                           )}
                         </td>

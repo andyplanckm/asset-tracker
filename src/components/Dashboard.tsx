@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
 import { Wallet, TrendingDown, PiggyBank, TrendingUp } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area } from 'recharts'
+import { LineChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area } from 'recharts'
 
 interface OverviewData {
   totalAssets: number
@@ -74,7 +74,7 @@ export default function Dashboard({ refreshKey }: Props) {
   }
 
   const cards = [
-    { label: '总资产', value: data.totalAssets, icon: Wallet, color: 'text-green-500', bg: 'bg-green-50' },
+    { label: '灵活取用', value: data.totalAssets, icon: Wallet, color: 'text-green-500', bg: 'bg-green-50' },
     { label: '总投资', value: data.totalInvestments, icon: TrendingUp, color: 'text-amber-500', bg: 'bg-amber-50' },
     { label: '总负债', value: data.totalLiabilities, icon: TrendingDown, color: 'text-red-500', bg: 'bg-red-50' },
     { label: '净资产', value: data.netWorth, icon: PiggyBank, color: 'text-blue-500', bg: 'bg-blue-50' },
@@ -110,6 +110,7 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
   const [chartData, setChartData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [scaleMode, setScaleMode] = useState<'adaptive' | 'zero'>('adaptive')
+  const [chartMode, setChartMode] = useState<'all' | 'networth'>('all')
 
   useEffect(() => {
     loadTrendData()
@@ -187,24 +188,48 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-600">资产变化趋势</h3>
-        <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
-          <button
-            onClick={() => setScaleMode('adaptive')}
-            className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'adaptive' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            自适应
-          </button>
-          <button
-            onClick={() => setScaleMode('zero')}
-            className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'zero' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            从零开始
-          </button>
+        <h3 className="text-sm font-semibold text-gray-600">
+          {chartMode === 'all' ? '资产变化趋势' : '净资产变化趋势'}
+        </h3>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
+            <button
+              onClick={() => setChartMode('all')}
+              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'all' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >
+              总览
+            </button>
+            <button
+              onClick={() => setChartMode('networth')}
+              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'networth' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >
+              净资产
+            </button>
+          </div>
+          {chartMode === 'all' && (
+            <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
+              <button
+                onClick={() => setScaleMode('adaptive')}
+                className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'adaptive' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                自适应
+              </button>
+              <button
+                onClick={() => setScaleMode('zero')}
+                className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'zero' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                从零开始
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div className="h-64">
-        <TrendChartContent data={chartData} yDomain={yDomain} />
+        {chartMode === 'all' ? (
+          <TrendChartContent data={chartData} yDomain={yDomain} />
+        ) : (
+          <NetWorthChartContent data={chartData} />
+        )}
       </div>
     </div>
   )
@@ -257,14 +282,57 @@ function TrendChartContent({ data, yDomain }: { data: any[]; yDomain: [number, n
           contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
         />
         <Legend iconType="plainline" />
-        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="none" />
-        <Line type="monotone" dataKey="资产" stroke="#22c55e" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="none" />
-        <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="none" />
-        <Line type="monotone" dataKey="负债" stroke="#ef4444" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="none" />
-        <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
+        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="#22c55e" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="#3b82f6" strokeWidth={3} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+function NetWorthChartContent({ data }: { data: any[] }) {
+  const values = data.map(d => d.净资产)
+  const dataMin = Math.min(...values)
+  const dataMax = Math.max(...values)
+  const range = dataMax - dataMin || 1
+  const padding = range * 0.18
+  const yDomain: [number, number] = [dataMin - padding, dataMax + padding]
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+        <defs>
+          <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
+        <XAxis
+          dataKey="_ts"
+          type="number"
+          domain={['dataMin', 'dataMax']}
+          tick={{ fontSize: 11 }}
+          stroke="#c4b5e0"
+          tickFormatter={(ts: number) => {
+            const d = new Date(ts)
+            return `${d.getMonth() + 1}/${d.getDate()}`
+          }}
+        />
+        <YAxis
+          domain={yDomain}
+          tick={{ fontSize: 11 }}
+          stroke="#c4b5e0"
+          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`}
+          width={50}
+        />
+        <Tooltip
+          formatter={(value) => [`¥${Number(value).toLocaleString()}`, '净资产']}
+          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
+        />
+        <Area type="monotone" dataKey="净资产" fill="url(#nwGrad)" stroke="#3b82f6" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   )
