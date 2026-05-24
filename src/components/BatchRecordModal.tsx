@@ -29,9 +29,9 @@ export default function BatchRecordModal({ accounts, onClose, onSaved }: Props) 
 
     setSaving(true)
 
-    const now = new Date()
     const [y, m, d] = date.split('-').map(Number)
-    const recordedAt = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds())
+    // Normalize to noon to merge with individual edits on same day
+    const recordedAt = new Date(y, m - 1, d, 12, 0, 0)
 
     const inserts: any[] = []
     Object.entries(amounts).forEach(([accountId, val]) => {

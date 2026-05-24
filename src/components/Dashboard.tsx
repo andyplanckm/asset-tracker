@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
 import { Wallet, TrendingDown, PiggyBank, TrendingUp } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area } from 'recharts'
 
 interface OverviewData {
   totalAssets: number
@@ -221,7 +221,25 @@ function TrendChartContent({ data, yDomain }: { data: any[]; yDomain: [number, n
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <defs>
+          <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#22c55e" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="#22c55e" stopOpacity={0.01} />
+          </linearGradient>
+          <linearGradient id="amberGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.01} />
+          </linearGradient>
+          <linearGradient id="redGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity={0.01} />
+          </linearGradient>
+          <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
         <XAxis
           dataKey="_ts"
           type="number"
@@ -243,13 +261,17 @@ function TrendChartContent({ data, yDomain }: { data: any[]; yDomain: [number, n
         <Tooltip
           formatter={(value, name) => [`¥${Number(value).toLocaleString()}`, name]}
           labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px' }}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
         />
-        <Legend />
-        <Line type="monotone" dataKey="资产" stroke="#22c55e" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="负债" stroke="#ef4444" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={2} dot={false} />
+        <Legend iconType="plainline" />
+        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="none" />
+        <Line type="monotone" dataKey="资产" stroke="#22c55e" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="none" />
+        <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="none" />
+        <Line type="monotone" dataKey="负债" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="none" />
+        <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   )
