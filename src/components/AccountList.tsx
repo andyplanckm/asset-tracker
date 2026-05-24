@@ -1,21 +1,25 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
-import { Plus, Edit3, Trash2, History, TrendingUp, Calendar } from 'lucide-react'
+import { Plus, Edit3, Trash2, History, TrendingUp, Calendar, Table2, LayoutGrid } from 'lucide-react'
 import * as Icons from 'lucide-react'
 import AddAccountModal from './AddAccountModal'
 import RecordBalanceModal from './RecordBalanceModal'
 import TrendChart from './TrendChart'
 import BalanceHistory from './BalanceHistory'
 import BatchRecordModal from './BatchRecordModal'
+import HistoryTable from './HistoryTable'
 
 interface Props {
   onRecorded: () => void
 }
 
+type ViewMode = 'cards' | 'table'
+
 export default function AccountList({ onRecorded }: Props) {
   const [accounts, setAccounts] = useState<(Account & { latest_balance: number | null })[]>([])
   const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<ViewMode>('cards')
   const [showAddModal, setShowAddModal] = useState(false)
   const [editAccount, setEditAccount] = useState<Account | null>(null)
   const [recordAccount, setRecordAccount] = useState<Account | null>(null)
@@ -107,24 +111,51 @@ export default function AccountList({ onRecorded }: Props) {
 
   return (
     <div>
-      {/* 资产账户 */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-green-600 uppercase tracking-wide">资产账户</h2>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowBatchModal(true)}
-              className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 font-medium cursor-pointer"
-            >
-              <Calendar className="w-4 h-4" /> 批量记录
-            </button>
+      {/* 顶部工具栏 */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex rounded-md overflow-hidden border border-gray-200 text-xs">
+          <button
+            onClick={() => setViewMode('cards')}
+            className={`px-3 py-1.5 cursor-pointer transition flex items-center gap-1 ${viewMode === 'cards' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" /> 卡片
+          </button>
+          <button
+            onClick={() => setViewMode('table')}
+            className={`px-3 py-1.5 cursor-pointer transition flex items-center gap-1 ${viewMode === 'table' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+          >
+            <Table2 className="w-3.5 h-3.5" /> 表格
+          </button>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowBatchModal(true)}
+            className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 font-medium cursor-pointer"
+          >
+            <Calendar className="w-4 h-4" /> 批量记录
+          </button>
+          {viewMode === 'cards' && (
             <button
               onClick={() => setShowAddModal(true)}
               className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 font-medium cursor-pointer"
             >
               <Plus className="w-4 h-4" /> 添加
             </button>
-          </div>
+          )}
+        </div>
+      </div>
+
+      {/* 表格视图 */}
+      {viewMode === 'table' && (
+        <HistoryTable onRecorded={onRecorded} />
+      )}
+
+      {/* 卡片视图 */}
+      {viewMode === 'cards' && (<>
+      {/* 资产账户 */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-green-600 uppercase tracking-wide">资产账户</h2>
         </div>
 
         {assetAccounts.length === 0 ? (
@@ -280,6 +311,7 @@ export default function AccountList({ onRecorded }: Props) {
           onSaved={() => { setShowBatchModal(false); loadAccounts(); onRecorded() }}
         />
       )}
+      </>)}
     </div>
   )
 }
