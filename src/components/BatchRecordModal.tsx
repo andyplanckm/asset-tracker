@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X, Calendar } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, upsertBalance } from '../lib/supabase'
 import type { Account } from '../lib/types'
 import * as Icons from 'lucide-react'
 
@@ -29,25 +29,13 @@ export default function BatchRecordModal({ accounts, onClose, onSaved }: Props) 
 
     setSaving(true)
 
-    const [y, m, d] = date.split('-').map(Number)
-    // Normalize to noon to merge with individual edits on same day
-    const recordedAt = new Date(y, m - 1, d, 12, 0, 0)
-
-    const inserts: any[] = []
-    Object.entries(amounts).forEach(([accountId, val]) => {
+    const entries = Object.entries(amounts).filter(([, val]) => {
       const num = parseFloat(val)
-      if (!isNaN(num) && num >= 0) {
-        inserts.push({
-          user_id: user.id,
-          account_id: accountId,
-          amount: num,
-          recorded_at: recordedAt.toISOString(),
-        })
-      }
+      return !isNaN(num) && num >= 0
     })
 
-    if (inserts.length > 0) {
-      await supabase.from('balances').insert(inserts)
+    for (const [accountId, val] of entries) {
+      await upsertBalance(user.id, accountId, parseFloat(val), date)
     }
 
     setSaving(false)

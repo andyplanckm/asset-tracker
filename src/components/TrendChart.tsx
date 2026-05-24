@@ -30,11 +30,25 @@ export default function TrendChart({ accountId }: Props) {
       return
     }
 
-    const chartData = balances.map((b) => ({
-      date: new Date(b.recorded_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
-      amount: b.amount,
-      _ts: new Date(b.recorded_at).getTime(),
-    }))
+    // 按天分组，每天只保留最后一条记录
+    const dayMap = new Map<string, number>()
+    balances.forEach((b) => {
+      const d = new Date(b.recorded_at)
+      const key = `${d.getFullYear()}/${d.getMonth()}/${d.getDate()}`
+      dayMap.set(key, b.amount)
+    })
+
+    const chartData = Array.from(dayMap.entries())
+      .map(([key, amount]) => {
+        const [y, m, d] = key.split('/').map(Number)
+        const noonTs = new Date(y, m, d, 12, 0, 0).getTime()
+        return {
+          date: new Date(noonTs).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
+          amount,
+          _ts: noonTs,
+        }
+      })
+      .sort((a, b) => a._ts - b._ts)
 
     setData(chartData)
   }

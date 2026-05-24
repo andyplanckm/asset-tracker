@@ -129,17 +129,24 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
     if (!balances || balances.length === 0) { setLoading(false); return }
 
     const accountTypeMap = new Map(accounts.map(a => [a.id, a.type]))
+
+    // 按天分组，每个账户每天只保留最后一条记录
+    const dayMap = new Map<string, Map<string, number>>()
+    balances.forEach((b) => {
+      const d = new Date(b.recorded_at)
+      const dayKey = `${d.getFullYear()}/${d.getMonth()}/${d.getDate()}`
+      if (!dayMap.has(dayKey)) dayMap.set(dayKey, new Map())
+      dayMap.get(dayKey)!.set(b.account_id, b.amount)
+    })
+
+    // 一天一个数据点，累计状态
+    const sortedDays = Array.from(dayMap.keys()).sort()
     const currentAmounts = new Map<string, number>()
-    const data: any[] = []
-
-    const BUCKET_MS = 5 * 60 * 1000
-    let currentBucket = ''
-    let bucketAmounts: { assets: number; investments: number; liabilities: number; _ts: number } | null = null
-
-    balances.forEach((b, i) => {
-      const ts = new Date(b.recorded_at).getTime()
-      const bucket = Math.floor(ts / BUCKET_MS).toString()
-      currentAmounts.set(b.account_id, b.amount)
+    const data = sortedDays.map((dayKey) => {
+      const dayBalances = dayMap.get(dayKey)!
+      dayBalances.forEach((amount, accId) => {
+        currentAmounts.set(accId, amount)
+      })
 
       let assets = 0, investments = 0, liabilities = 0
       currentAmounts.forEach((amount, accId) => {
@@ -149,29 +156,15 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
         else liabilities += amount
       })
 
-      if (bucket !== currentBucket) {
-        if (bucketAmounts) {
-          data.push({
-            _ts: Number(currentBucket) * BUCKET_MS,
-            资产: bucketAmounts.assets,
-            投资: bucketAmounts.investments,
-            负债: bucketAmounts.liabilities,
-            净资产: bucketAmounts.assets + bucketAmounts.investments - bucketAmounts.liabilities,
-          })
-        }
-        currentBucket = bucket
-      }
+      const [y, m, d] = dayKey.split('/').map(Number)
+      const noonTs = new Date(y, m, d, 12, 0, 0).getTime()
 
-      bucketAmounts = { assets, investments, liabilities, _ts: Number(bucket) * BUCKET_MS }
-
-      if (i === balances.length - 1 && bucketAmounts) {
-        data.push({
-          _ts: bucketAmounts._ts,
-          资产: bucketAmounts.assets,
-          投资: bucketAmounts.investments,
-          负债: bucketAmounts.liabilities,
-          净资产: bucketAmounts.assets + bucketAmounts.investments - bucketAmounts.liabilities,
-        })
+      return {
+        _ts: noonTs,
+        资产: assets,
+        投资: investments,
+        负债: liabilities,
+        净资产: assets + investments - liabilities,
       }
     })
 

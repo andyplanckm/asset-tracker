@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, upsertBalance } from '../lib/supabase'
 import type { Account } from '../lib/types'
 
 interface Props {
@@ -27,17 +27,7 @@ export default function RecordBalanceModal({ account, onClose, onSaved }: Props)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    // 使用选定的日期 + 当前时间
-    const now = new Date()
-    const [y, m, d] = date.split('-').map(Number)
-    const recordedAt = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds())
-
-    await supabase.from('balances').insert({
-      user_id: user.id,
-      account_id: account.id,
-      amount: num,
-      recorded_at: recordedAt.toISOString(),
-    })
+    await upsertBalance(user.id, account.id, num, date)
 
     setSaving(false)
     onSaved()

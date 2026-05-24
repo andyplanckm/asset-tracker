@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase, upsertBalance } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
 
 interface Row {
@@ -105,13 +105,8 @@ export default function HistoryTable({ onRecorded }: Props) {
     } else {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const parts = editing.date.split('/')
-      // Normalize to noon to avoid intra-day fragmentation
-      const recordedAt = new Date(+parts[0], +parts[1] - 1, +parts[2], 12, 0, 0)
-      await supabase.from('balances').insert({
-        user_id: user.id, account_id: editing.accountId,
-        amount: num, recorded_at: recordedAt.toISOString(),
-      })
+      const dateStr = editing.date.replace(/\//g, '-')
+      await upsertBalance(user.id, editing.accountId, num, dateStr)
     }
 
     setEditing(null)
