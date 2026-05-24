@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
-import { Plus, Edit3, Trash2, History, TrendingUp } from 'lucide-react'
+import { Plus, Edit3, Trash2, History, TrendingUp, Calendar } from 'lucide-react'
 import * as Icons from 'lucide-react'
 import AddAccountModal from './AddAccountModal'
 import RecordBalanceModal from './RecordBalanceModal'
 import TrendChart from './TrendChart'
 import BalanceHistory from './BalanceHistory'
+import BatchRecordModal from './BatchRecordModal'
 
 interface Props {
   onRecorded: () => void
@@ -20,6 +21,7 @@ export default function AccountList({ onRecorded }: Props) {
   const [recordAccount, setRecordAccount] = useState<Account | null>(null)
   const [historyAccount, setHistoryAccount] = useState<{ id: string; name: string } | null>(null)
   const [expandedCharts, setExpandedCharts] = useState<Set<string>>(new Set())
+  const [showBatchModal, setShowBatchModal] = useState(false)
 
   useEffect(() => {
     loadAccounts()
@@ -109,12 +111,20 @@ export default function AccountList({ onRecorded }: Props) {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-green-600 uppercase tracking-wide">资产账户</h2>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 font-medium cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> 添加
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowBatchModal(true)}
+              className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 font-medium cursor-pointer"
+            >
+              <Calendar className="w-4 h-4" /> 批量记录
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 font-medium cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> 添加
+            </button>
+          </div>
         </div>
 
         {assetAccounts.length === 0 ? (
@@ -261,6 +271,13 @@ export default function AccountList({ onRecorded }: Props) {
           accountId={historyAccount.id}
           accountName={historyAccount.name}
           onClose={() => setHistoryAccount(null)}
+        />
+      )}
+      {showBatchModal && (
+        <BatchRecordModal
+          accounts={accounts}
+          onClose={() => setShowBatchModal(false)}
+          onSaved={() => { setShowBatchModal(false); loadAccounts(); onRecorded() }}
         />
       )}
     </div>

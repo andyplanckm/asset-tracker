@@ -7,7 +7,9 @@
       "Bash(npx vercel *)",
       "Bash(cd \"d:/code学习/资产总览\" && ls -la ../asset-tracker.zip 2>&1)",
       "Read(//d/code学习/**)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git commit *)",
+      "Bash(rm -f ../asset-tracker-latest.zip)"
     ]
   }
 }
