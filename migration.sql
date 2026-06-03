@@ -2,4 +2,4 @@
 -- 请在 Supabase 控制台的 SQL Editor 中执行
 
 ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_type_check;
-ALTER TABLE accounts ADD CONSTRAINT accounts_type_check CHECK (type IN ('asset', 'investment', 'liability'));
+ALTER TABLE accounts ADD CONSTRAINT accounts_type_check CHECK (type IN ('asset', 'investment', 'liability', 'pnl'));

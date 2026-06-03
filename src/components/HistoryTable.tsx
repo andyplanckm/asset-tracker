@@ -61,7 +61,8 @@ export default function HistoryTable({ onRecorded }: Props) {
         const amount = entry ? entry.amount : null
         if (amount !== null) {
           if (acc.type === 'asset' || acc.type === 'investment') rowSum += amount
-          else rowSum -= amount
+          else if (acc.type === 'liability') rowSum -= amount
+          // pnl excluded from net worth
         }
         return {
           accountId: acc.id,
@@ -117,12 +118,14 @@ export default function HistoryTable({ onRecorded }: Props) {
   const typeColorClass = (type: string) => {
     if (type === 'asset') return 'text-green-600'
     if (type === 'investment') return 'text-amber-500'
-    return 'text-red-500'
+    if (type === 'liability') return 'text-red-500'
+    return 'text-violet-500'
   }
   const typeBgClass = (type: string) => {
     if (type === 'asset') return 'bg-green-50'
     if (type === 'investment') return 'bg-amber-50'
-    return 'bg-red-50'
+    if (type === 'liability') return 'bg-red-50'
+    return 'bg-violet-50'
   }
 
   if (loading) return <div className="text-center text-gray-400 py-8">加载中...</div>
@@ -137,6 +140,7 @@ export default function HistoryTable({ onRecorded }: Props) {
     { type: 'asset' as const, label: '灵活取用', accounts: accounts.filter(a => a.type === 'asset') },
     { type: 'investment' as const, label: '投资', accounts: accounts.filter(a => a.type === 'investment') },
     { type: 'liability' as const, label: '负债', accounts: accounts.filter(a => a.type === 'liability') },
+    { type: 'pnl' as const, label: '投资盈亏', accounts: accounts.filter(a => a.type === 'pnl') },
   ].filter(g => g.accounts.length > 0)
 
   const hasAnyAccount = accounts.length > 0

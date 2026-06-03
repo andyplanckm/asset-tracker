@@ -22,6 +22,7 @@ export default function BatchRecordModal({ accounts, onClose, onSaved }: Props) 
   const assetAccounts = accounts.filter(a => a.type === 'asset')
   const investmentAccounts = accounts.filter(a => a.type === 'investment')
   const liabilityAccounts = accounts.filter(a => a.type === 'liability')
+  const pnlAccounts = accounts.filter(a => a.type === 'pnl')
 
   const handleSave = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -31,7 +32,7 @@ export default function BatchRecordModal({ accounts, onClose, onSaved }: Props) 
 
     const entries = Object.entries(amounts).filter(([, val]) => {
       const num = parseFloat(val)
-      return !isNaN(num) && num >= 0
+      return !isNaN(num)
     })
 
     for (const [accountId, val] of entries) {
@@ -56,7 +57,8 @@ export default function BatchRecordModal({ accounts, onClose, onSaved }: Props) 
   const sectionColor = (type: string) => {
     if (type === 'asset') return 'text-green-600 bg-green-50'
     if (type === 'investment') return 'text-amber-500 bg-amber-50'
-    return 'text-red-500 bg-red-50'
+    if (type === 'liability') return 'text-red-500 bg-red-50'
+    return 'text-violet-500 bg-violet-50'
   }
 
   const renderSection = (label: string, list: typeof accounts) => {
@@ -122,6 +124,7 @@ export default function BatchRecordModal({ accounts, onClose, onSaved }: Props) 
               {renderSection('资产账户', assetAccounts)}
               {renderSection('投资账户', investmentAccounts)}
               {renderSection('负债账户', liabilityAccounts)}
+              {renderSection('投资盈亏', pnlAccounts)}
             </>
           )}
         </div>

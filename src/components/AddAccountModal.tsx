@@ -8,12 +8,12 @@ import * as Icons from 'lucide-react'
 interface Props {
   onClose: () => void
   onSaved: () => void
-  editAccount?: { id: string; name: string; type: 'asset' | 'investment' | 'liability'; icon: string } | null
+  editAccount?: { id: string; name: string; type: 'asset' | 'investment' | 'liability' | 'pnl'; icon: string } | null
 }
 
 export default function AddAccountModal({ onClose, onSaved, editAccount }: Props) {
   const [name, setName] = useState(editAccount?.name || '')
-  const [type, setType] = useState<'asset' | 'investment' | 'liability'>(editAccount?.type || 'asset')
+  const [type, setType] = useState<'asset' | 'investment' | 'liability' | 'pnl'>(editAccount?.type || 'asset')
   const [icon, setIcon] = useState<IconName>((editAccount?.icon as IconName) || 'Wallet')
   const [saving, setSaving] = useState(false)
 
@@ -100,6 +100,16 @@ export default function AddAccountModal({ onClose, onSaved, editAccount }: Props
                 }`}
               >
                 负债
+              </button>
+              <button
+                onClick={() => setType('pnl')}
+                className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition cursor-pointer ${
+                  type === 'pnl'
+                    ? 'border-violet-300 bg-violet-50 text-violet-600'
+                    : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                }`}
+              >
+                投资盈亏
               </button>
             </div>
           </div>

@@ -108,6 +108,7 @@ export default function AccountList({ onRecorded }: Props) {
   const assetAccounts = accounts.filter(a => a.type === 'asset')
   const investmentAccounts = accounts.filter(a => a.type === 'investment')
   const liabilityAccounts = accounts.filter(a => a.type === 'liability')
+  const pnlAccounts = accounts.filter(a => a.type === 'pnl')
 
   return (
     <div>
@@ -263,6 +264,43 @@ export default function AccountList({ onRecorded }: Props) {
         )}
       </div>
 
+      {/* 投资盈亏 */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-violet-500 uppercase tracking-wide">投资盈亏</h2>
+        </div>
+
+        {pnlAccounts.length === 0 ? (
+          <div className="bg-white rounded-xl border border-dashed border-gray-200 p-8 text-center">
+            <p className="text-gray-400 mb-3">还没有盈亏账户</p>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="text-blue-500 hover:text-blue-600 text-sm font-medium cursor-pointer"
+            >
+              + 添加第一个盈亏账户
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pnlAccounts.map(acc => (
+              <AccountCard
+                key={acc.id}
+                account={acc}
+                formatMoney={formatMoney}
+                renderIcon={renderIcon}
+                onRecord={() => setRecordAccount(acc)}
+                onEdit={() => setEditAccount(acc)}
+                onDelete={() => handleDelete(acc.id)}
+                onHistory={() => setHistoryAccount({ id: acc.id, name: acc.name })}
+                onToggleChart={() => toggleChart(acc.id)}
+                showChart={expandedCharts.has(acc.id)}
+                chartType="pnl"
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* 空状态 */}
       {accounts.length === 0 && !loading && (
         <div className="text-center py-12">
@@ -337,10 +375,10 @@ function AccountCard({
   onHistory: () => void
   onToggleChart: () => void
   showChart: boolean
-  chartType: 'asset' | 'investment' | 'liability'
+  chartType: 'asset' | 'investment' | 'liability' | 'pnl'
 }) {
-  const colorMap = { asset: 'text-green-600', investment: 'text-amber-500', liability: 'text-red-500' }
-  const bgMap = { asset: 'bg-green-50', investment: 'bg-amber-50', liability: 'bg-red-50' }
+  const colorMap = { asset: 'text-green-600', investment: 'text-amber-500', liability: 'text-red-500', pnl: 'text-violet-500' }
+  const bgMap = { asset: 'bg-green-50', investment: 'bg-amber-50', liability: 'bg-red-50', pnl: 'bg-violet-50' }
   const colorClass = colorMap[chartType]
   const bgClass = bgMap[chartType]
 

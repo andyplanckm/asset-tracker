@@ -54,7 +54,7 @@ export type Database = {
     id: string
     user_id: string
     name: string
-    type: 'asset' | 'investment' | 'liability'
+    type: 'asset' | 'investment' | 'liability' | 'pnl'
     icon: string
     created_at: string
   }

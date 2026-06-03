@@ -59,6 +59,7 @@ export default function Dashboard({ refreshKey }: Props) {
 
     let totalAssets = 0, totalInvestments = 0, totalLiabilities = 0
     accountsData.forEach(acc => {
+      if (acc.type === 'pnl') return // pnl 不计入总览
       const amount = latestBalances.get(acc.id) || 0
       if (acc.type === 'asset') totalAssets += amount
       else if (acc.type === 'investment') totalInvestments += amount
@@ -106,7 +107,7 @@ export default function Dashboard({ refreshKey }: Props) {
   )
 }
 
-type ChartMode = 'all' | 'networth' | 'investment'
+type ChartMode = 'all' | 'networth' | 'investment' | 'pnl'
 
 function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refreshKey: number }) {
   const [chartData, setChartData] = useState<any[]>([])
@@ -151,12 +152,13 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
         currentAmounts.set(accId, amount)
       })
 
-      let assets = 0, investments = 0, liabilities = 0
+      let assets = 0, investments = 0, liabilities = 0, pnl = 0
       currentAmounts.forEach((amount, accId) => {
         const type = accountTypeMap.get(accId)
         if (type === 'asset') assets += amount
         else if (type === 'investment') investments += amount
-        else liabilities += amount
+        else if (type === 'liability') liabilities += amount
+        else if (type === 'pnl') pnl += amount
       })
 
       const [y, m, d] = dayKey.split('/').map(Number)
@@ -168,6 +170,7 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
         投资: investments,
         负债: liabilities,
         净资产: assets + investments - liabilities,
+        投资盈亏: pnl,
       }
     })
 
@@ -187,7 +190,7 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
     ? [dataMin - padding, dataMax + padding]
     : [0, dataMax + padding]
 
-  const modeLabel = chartMode === 'all' ? '资产变化趋势' : chartMode === 'networth' ? '净资产变化趋势' : '投资变化趋势'
+  const modeLabel = chartMode === 'all' ? '资产变化趋势' : chartMode === 'networth' ? '净资产变化趋势' : chartMode === 'investment' ? '投资变化趋势' : '投资盈亏趋势'
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
@@ -213,6 +216,12 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
             >
               投资
             </button>
+            <button
+              onClick={() => setChartMode('pnl')}
+              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'pnl' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >
+              投资盈亏
+            </button>
           </div>
           {chartMode === 'all' && (
             <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
@@ -236,6 +245,7 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
         {chartMode === 'all' && <TrendChartContent data={chartData} yDomain={yDomain} />}
         {chartMode === 'networth' && <NetWorthChartContent data={chartData} />}
         {chartMode === 'investment' && <InvestmentChartContent data={chartData} />}
+        {chartMode === 'pnl' && <PnlChartContent data={chartData} />}
       </div>
     </div>
   )
@@ -384,6 +394,39 @@ function InvestmentChartContent({ data }: { data: any[] }) {
           contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
         <Area type="monotone" dataKey="投资" fill="url(#invGrad)" stroke="none" />
         <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={3} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+function PnlChartContent({ data }: { data: any[] }) {
+  const values = data.map(d => d.投资盈亏)
+  const dataMin = Math.min(...values)
+  const dataMax = Math.max(...values)
+  const range = dataMax - dataMin || 1
+  const padding = range * 0.18
+  const yDomain: [number, number] = [dataMin - padding, dataMax + padding]
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+        <defs>
+          <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
+        <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11 }} stroke="#c4b5e0"
+          tickFormatter={(ts: number) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}` }} />
+        <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0"
+          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`} width={50} />
+        <Tooltip
+          formatter={(value) => [`¥${Number(value).toLocaleString()}`, '投资盈亏']}
+          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
+        <Area type="monotone" dataKey="投资盈亏" fill="url(#pnlGrad)" stroke="none" />
+        <Line type="monotone" dataKey="投资盈亏" stroke="#8b5cf6" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   )
