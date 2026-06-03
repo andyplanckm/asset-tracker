@@ -16,27 +16,35 @@ export default function AddAccountModal({ onClose, onSaved, editAccount }: Props
   const [type, setType] = useState<'asset' | 'investment' | 'liability' | 'pnl'>(editAccount?.type || 'asset')
   const [icon, setIcon] = useState<IconName>((editAccount?.icon as IconName) || 'Wallet')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   const handleSave = async () => {
     if (!name.trim()) return
     setSaving(true)
+    setError('')
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    if (editAccount) {
-      await supabase
-        .from('accounts')
-        .update({ name: name.trim(), type, icon })
-        .eq('id', editAccount.id)
-    } else {
-      await supabase
-        .from('accounts')
-        .insert({ user_id: user.id, name: name.trim(), type, icon })
+      if (editAccount) {
+        const { error: err } = await supabase
+          .from('accounts')
+          .update({ name: name.trim(), type, icon })
+          .eq('id', editAccount.id)
+        if (err) throw err
+      } else {
+        const { error: err } = await supabase
+          .from('accounts')
+          .insert({ user_id: user.id, name: name.trim(), type, icon })
+        if (err) throw err
+      }
+
+      onSaved()
+    } catch (err: any) {
+      setError(err.message || '保存失败，请重试')
+      setSaving(false)
     }
-
-    setSaving(false)
-    onSaved()
   }
 
   const renderIcon = (iconName: string) => {
@@ -131,6 +139,9 @@ export default function AddAccountModal({ onClose, onSaved, editAccount }: Props
             </div>
           </div>
 
+          {error && (
+            <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+          )}
           <button
             onClick={handleSave}
             disabled={saving || !name.trim()}

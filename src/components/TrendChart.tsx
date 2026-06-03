@@ -121,7 +121,7 @@ export default function TrendChart({ accountId }: Props) {
             labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
           />
-          <Area type="monotone" dataKey="amount" fill="url(#chartGradient)" stroke="none" />
+          <Area type="monotone" dataKey="amount" fill="url(#chartGradient)" stroke="none" legendType="none" />
           <Line
             type="monotone"
             dataKey="amount"

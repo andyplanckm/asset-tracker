@@ -320,13 +320,13 @@ function TrendChartContent({ data, yDomain }: { data: any[]; yDomain: [number, n
         />
         <Tooltip content={<CustomTooltip />} />
         <Legend iconType="plainline" />
-        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="none" />
+        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="none" legendType="none" />
         <Line type="monotone" dataKey="资产" stroke="#22c55e" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="none" />
+        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="none" legendType="none" />
         <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="none" />
+        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="none" legendType="none" />
         <Line type="monotone" dataKey="负债" stroke="#ef4444" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="none" />
+        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="none" legendType="none" />
         <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
@@ -359,7 +359,7 @@ function NetWorthChartContent({ data }: { data: any[] }) {
           formatter={(value) => [`¥${Number(value).toLocaleString()}`, '净资产']}
           labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
           contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
-        <Area type="monotone" dataKey="净资产" fill="url(#nwGrad)" stroke="none" />
+        <Area type="monotone" dataKey="净资产" fill="url(#nwGrad)" stroke="none" legendType="none" />
         <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
@@ -392,7 +392,7 @@ function InvestmentChartContent({ data }: { data: any[] }) {
           formatter={(value) => [`¥${Number(value).toLocaleString()}`, '投资']}
           labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
           contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
-        <Area type="monotone" dataKey="投资" fill="url(#invGrad)" stroke="none" />
+        <Area type="monotone" dataKey="投资" fill="url(#invGrad)" stroke="none" legendType="none" />
         <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
@@ -425,7 +425,7 @@ function PnlChartContent({ data }: { data: any[] }) {
           formatter={(value) => [`¥${Number(value).toLocaleString()}`, '投资盈亏']}
           labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
           contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
-        <Area type="monotone" dataKey="投资盈亏" fill="url(#pnlGrad)" stroke="none" />
+        <Area type="monotone" dataKey="投资盈亏" fill="url(#pnlGrad)" stroke="none" legendType="none" />
         <Line type="monotone" dataKey="投资盈亏" stroke="#8b5cf6" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
