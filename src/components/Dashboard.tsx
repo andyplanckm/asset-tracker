@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
 import { Wallet, TrendingDown, PiggyBank, TrendingUp } from 'lucide-react'
-import { LineChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area } from 'recharts'
 
 interface OverviewData {
   totalAssets: number
@@ -106,11 +106,13 @@ export default function Dashboard({ refreshKey }: Props) {
   )
 }
 
+type ChartMode = 'all' | 'networth' | 'investment'
+
 function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refreshKey: number }) {
   const [chartData, setChartData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [scaleMode, setScaleMode] = useState<'adaptive' | 'zero'>('adaptive')
-  const [chartMode, setChartMode] = useState<'all' | 'networth'>('all')
+  const [chartMode, setChartMode] = useState<ChartMode>('all')
 
   useEffect(() => {
     loadTrendData()
@@ -175,7 +177,7 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
 
   if (loading || chartData.length === 0) return null
 
-  // Compute Y domain
+  // Compute Y domain for all-lines view
   const allValues = chartData.flatMap(d => [d.资产, d.投资, d.负债, d.净资产])
   const dataMin = Math.min(...allValues)
   const dataMax = Math.max(...allValues)
@@ -185,12 +187,12 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
     ? [dataMin - padding, dataMax + padding]
     : [0, dataMax + padding]
 
+  const modeLabel = chartMode === 'all' ? '资产变化趋势' : chartMode === 'networth' ? '净资产变化趋势' : '投资变化趋势'
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-600">
-          {chartMode === 'all' ? '资产变化趋势' : '净资产变化趋势'}
-        </h3>
+        <h3 className="text-sm font-semibold text-gray-600">{modeLabel}</h3>
         <div className="flex items-center gap-2">
           <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
             <button
@@ -204,6 +206,12 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
               className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'networth' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
             >
               净资产
+            </button>
+            <button
+              onClick={() => setChartMode('investment')}
+              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'investment' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >
+              投资
             </button>
           </div>
           {chartMode === 'all' && (
@@ -225,12 +233,36 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
         </div>
       </div>
       <div className="h-64">
-        {chartMode === 'all' ? (
-          <TrendChartContent data={chartData} yDomain={yDomain} />
-        ) : (
-          <NetWorthChartContent data={chartData} />
-        )}
+        {chartMode === 'all' && <TrendChartContent data={chartData} yDomain={yDomain} />}
+        {chartMode === 'networth' && <NetWorthChartContent data={chartData} />}
+        {chartMode === 'investment' && <InvestmentChartContent data={chartData} />}
       </div>
+    </div>
+  )
+}
+
+/** 自定义 Tooltip：过滤 Area+Line 产生的重复 dataKey 条目 */
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload || !payload.length) return null
+
+  const seen = new Set<string>()
+  const unique = payload.filter((p: any) => {
+    if (seen.has(p.name)) return false
+    seen.add(p.name)
+    return true
+  })
+
+  return (
+    <div style={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', background: '#fff', padding: '8px 12px' }}>
+      <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#9ca3af' }}>
+        {new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
+      </p>
+      {unique.map((entry: any) => (
+        <p key={entry.name} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.color, display: 'inline-block', flexShrink: 0 }} />
+          {entry.name}：¥{Number(entry.value).toLocaleString()}
+        </p>
+      ))}
     </div>
   )
 }
@@ -276,16 +308,16 @@ function TrendChartContent({ data, yDomain }: { data: any[]; yDomain: [number, n
           tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`}
           width={50}
         />
-        <Tooltip
-          formatter={(value, name) => [`¥${Number(value).toLocaleString()}`, name]}
-          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-        />
+        <Tooltip content={<CustomTooltip />} />
         <Legend iconType="plainline" />
-        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="#22c55e" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="#ef4444" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="#3b82f6" strokeWidth={3} dot={false} />
+        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="none" />
+        <Line type="monotone" dataKey="资产" stroke="#22c55e" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="none" />
+        <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="none" />
+        <Line type="monotone" dataKey="负债" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="none" />
+        <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   )
@@ -309,30 +341,49 @@ function NetWorthChartContent({ data }: { data: any[] }) {
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
-        <XAxis
-          dataKey="_ts"
-          type="number"
-          domain={['dataMin', 'dataMax']}
-          tick={{ fontSize: 11 }}
-          stroke="#c4b5e0"
-          tickFormatter={(ts: number) => {
-            const d = new Date(ts)
-            return `${d.getMonth() + 1}/${d.getDate()}`
-          }}
-        />
-        <YAxis
-          domain={yDomain}
-          tick={{ fontSize: 11 }}
-          stroke="#c4b5e0"
-          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`}
-          width={50}
-        />
+        <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11 }} stroke="#c4b5e0"
+          tickFormatter={(ts: number) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}` }} />
+        <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0"
+          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`} width={50} />
         <Tooltip
           formatter={(value) => [`¥${Number(value).toLocaleString()}`, '净资产']}
           labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-        />
-        <Area type="monotone" dataKey="净资产" fill="url(#nwGrad)" stroke="#3b82f6" strokeWidth={3} dot={false} />
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
+        <Area type="monotone" dataKey="净资产" fill="url(#nwGrad)" stroke="none" />
+        <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+function InvestmentChartContent({ data }: { data: any[] }) {
+  const values = data.map(d => d.投资)
+  const dataMin = Math.min(...values)
+  const dataMax = Math.max(...values)
+  const range = dataMax - dataMin || 1
+  const padding = range * 0.18
+  const yDomain: [number, number] = [dataMin - padding, dataMax + padding]
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+        <defs>
+          <linearGradient id="invGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
+        <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11 }} stroke="#c4b5e0"
+          tickFormatter={(ts: number) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}` }} />
+        <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0"
+          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`} width={50} />
+        <Tooltip
+          formatter={(value) => [`¥${Number(value).toLocaleString()}`, '投资']}
+          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
+          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
+        <Area type="monotone" dataKey="投资" fill="url(#invGrad)" stroke="none" />
+        <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   )
