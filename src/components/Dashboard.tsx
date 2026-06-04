@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
-import { Wallet, TrendingDown, PiggyBank, TrendingUp } from 'lucide-react'
+import { Wallet, TrendingDown, PiggyBank, TrendingUp, Zap } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area } from 'recharts'
 
 interface OverviewData {
@@ -9,6 +9,7 @@ interface OverviewData {
   totalInvestments: number
   totalLiabilities: number
   netWorth: number
+  totalPnl: number
 }
 
 interface Props {
@@ -17,7 +18,7 @@ interface Props {
 
 export default function Dashboard({ refreshKey }: Props) {
   const [data, setData] = useState<OverviewData>({
-    totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0,
+    totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, totalPnl: 0,
   })
   const [accounts, setAccounts] = useState<Account[]>([])
   useEffect(() => {
@@ -46,7 +47,7 @@ export default function Dashboard({ refreshKey }: Props) {
       .returns<Balance[]>()
 
     if (!balances || balances.length === 0) {
-      setData({ totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0 })
+      setData({ totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, totalPnl: 0 })
       return
     }
 
@@ -57,10 +58,10 @@ export default function Dashboard({ refreshKey }: Props) {
       }
     })
 
-    let totalAssets = 0, totalInvestments = 0, totalLiabilities = 0
+    let totalAssets = 0, totalInvestments = 0, totalLiabilities = 0, totalPnl = 0
     accountsData.forEach(acc => {
-      if (acc.type === 'pnl') return // pnl 不计入总览
       const amount = latestBalances.get(acc.id) || 0
+      if (acc.type === 'pnl') { totalPnl += amount; return }
       if (acc.type === 'asset') totalAssets += amount
       else if (acc.type === 'investment') totalInvestments += amount
       else totalLiabilities += amount
@@ -71,6 +72,7 @@ export default function Dashboard({ refreshKey }: Props) {
       totalInvestments,
       totalLiabilities,
       netWorth: totalAssets + totalInvestments - totalLiabilities,
+      totalPnl,
     })
   }
 
@@ -79,6 +81,7 @@ export default function Dashboard({ refreshKey }: Props) {
     { label: '总投资', value: data.totalInvestments, icon: TrendingUp, color: 'text-amber-500', bg: 'bg-amber-50' },
     { label: '总负债', value: data.totalLiabilities, icon: TrendingDown, color: 'text-red-500', bg: 'bg-red-50' },
     { label: '净资产', value: data.netWorth, icon: PiggyBank, color: 'text-blue-500', bg: 'bg-blue-50' },
+    { label: '投资盈亏', value: data.totalPnl, icon: Zap, color: 'text-violet-500', bg: 'bg-violet-50' },
   ]
 
   const formatMoney = (v: number) => {
@@ -87,7 +90,7 @@ export default function Dashboard({ refreshKey }: Props) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         {cards.map((card) => (
           <div key={card.label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center justify-between mb-2">
