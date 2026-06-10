@@ -34,7 +34,7 @@ export default function TrendChart({ accountId }: Props) {
     const dayMap = new Map<string, number>()
     balances.forEach((b) => {
       const d = new Date(b.recorded_at)
-      const key = `${d.getFullYear()}/${d.getMonth()}/${d.getDate()}`
+      const key = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
       dayMap.set(key, b.amount)
     })
 

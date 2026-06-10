@@ -141,7 +141,7 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
     const dayMap = new Map<string, Map<string, number>>()
     balances.forEach((b) => {
       const d = new Date(b.recorded_at)
-      const dayKey = `${d.getFullYear()}/${d.getMonth()}/${d.getDate()}`
+      const dayKey = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
       if (!dayMap.has(dayKey)) dayMap.set(dayKey, new Map())
       dayMap.get(dayKey)!.set(b.account_id, b.amount)
     })
