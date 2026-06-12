@@ -41,7 +41,7 @@ export default function TrendChart({ accountId }: Props) {
     const chartData = Array.from(dayMap.entries())
       .map(([key, amount]) => {
         const [y, m, d] = key.split('/').map(Number)
-        const noonTs = new Date(y, m, d, 12, 0, 0).getTime()
+        const noonTs = new Date(y, m - 1, d, 12, 0, 0).getTime()
         return {
           date: new Date(noonTs).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
           amount,
