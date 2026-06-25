@@ -165,7 +165,7 @@ function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refresh
       })
 
       const [y, m, d] = dayKey.split('/').map(Number)
-      const noonTs = new Date(y, m, d, 12, 0, 0).getTime()
+      const noonTs = new Date(y, m - 1, d, 12, 0, 0).getTime()
 
       return {
         _ts: noonTs,

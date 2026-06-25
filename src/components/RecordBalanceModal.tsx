@@ -21,7 +21,7 @@ export default function RecordBalanceModal({ account, onClose, onSaved }: Props)
 
   const handleSave = async () => {
     const num = parseFloat(amount)
-    if (isNaN(num) || num < 0) return
+    if (isNaN(num)) return
     setSaving(true)
 
     const { data: { user } } = await supabase.auth.getUser()
