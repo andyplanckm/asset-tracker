@@ -80,7 +80,7 @@ export default function RecordBalanceModal({ account, onClose, onSaved }: Props)
 
           <button
             onClick={handleSave}
-            disabled={saving || !amount || parseFloat(amount) < 0}
+            disabled={saving || !amount}
             className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-medium rounded-lg transition cursor-pointer"
           >
             {saving ? '保存中...' : '保存记录'}
