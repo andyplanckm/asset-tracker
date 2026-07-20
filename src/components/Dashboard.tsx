@@ -1,95 +1,69 @@
-import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { useMemo, useState } from 'react'
+import { PiggyBank, TrendingDown, TrendingUp, Wallet, Zap } from 'lucide-react'
+import {
+  Area,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { buildDailySnapshots, formatCompactMoney, formatMoney } from '../lib/domain'
 import type { Account, Balance } from '../lib/types'
-import { Wallet, TrendingDown, PiggyBank, TrendingUp, Zap } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area } from 'recharts'
-
-interface OverviewData {
-  totalAssets: number
-  totalInvestments: number
-  totalLiabilities: number
-  netWorth: number
-  totalPnl: number
-}
 
 interface Props {
-  refreshKey: number
+  accounts: Account[]
+  balances: Balance[]
+  loading: boolean
 }
 
-export default function Dashboard({ refreshKey }: Props) {
-  const [data, setData] = useState<OverviewData>({
-    totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, totalPnl: 0,
-  })
-  const [accounts, setAccounts] = useState<Account[]>([])
-  useEffect(() => {
-    loadOverview()
-  }, [refreshKey])
+interface ChartPoint {
+  _ts: number
+  资产: number
+  投资: number
+  负债: number
+  净资产: number
+  投资盈亏: number
+}
 
-  const loadOverview = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+type ChartMode = 'all' | 'networth' | 'investment' | 'pnl'
+type MetricKey = '净资产' | '投资' | '投资盈亏'
 
-    const { data: accountsData } = await supabase
-      .from('accounts')
-      .select('*')
-      .eq('user_id', user.id)
-      .returns<Account[]>()
+const emptyOverview = {
+  totalAssets: 0,
+  totalInvestments: 0,
+  totalLiabilities: 0,
+  netWorth: 0,
+  totalPnl: 0,
+}
 
-    setAccounts(accountsData || [])
-    if (!accountsData || accountsData.length === 0) return
-
-    const accountIds = accountsData.map(a => a.id)
-    const { data: balances } = await supabase
-      .from('balances')
-      .select('*')
-      .in('account_id', accountIds)
-      .order('recorded_at', { ascending: false })
-      .returns<Balance[]>()
-
-    if (!balances || balances.length === 0) {
-      setData({ totalAssets: 0, totalInvestments: 0, totalLiabilities: 0, netWorth: 0, totalPnl: 0 })
-      return
-    }
-
-    const latestBalances = new Map<string, number>()
-    balances.forEach(b => {
-      if (!latestBalances.has(b.account_id)) {
-        latestBalances.set(b.account_id, b.amount)
-      }
-    })
-
-    let totalAssets = 0, totalInvestments = 0, totalLiabilities = 0, totalPnl = 0
-    accountsData.forEach(acc => {
-      const amount = latestBalances.get(acc.id) || 0
-      if (acc.type === 'pnl') { totalPnl += amount; return }
-      if (acc.type === 'asset') totalAssets += amount
-      else if (acc.type === 'investment') totalInvestments += amount
-      else totalLiabilities += amount
-    })
-
-    setData({
-      totalAssets,
-      totalInvestments,
-      totalLiabilities,
-      netWorth: totalAssets + totalInvestments - totalLiabilities,
-      totalPnl,
-    })
-  }
+export default function Dashboard({ accounts, balances, loading }: Props) {
+  const snapshots = useMemo(() => buildDailySnapshots(accounts, balances), [accounts, balances])
+  const latest = snapshots.at(-1)
+  const overview = latest ?? emptyOverview
 
   const cards = [
-    { label: '灵活取用', value: data.totalAssets, icon: Wallet, color: 'text-green-500', bg: 'bg-green-50' },
-    { label: '总投资', value: data.totalInvestments, icon: TrendingUp, color: 'text-amber-500', bg: 'bg-amber-50' },
-    { label: '总负债', value: data.totalLiabilities, icon: TrendingDown, color: 'text-red-500', bg: 'bg-red-50' },
-    { label: '净资产', value: data.netWorth, icon: PiggyBank, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { label: '投资盈亏', value: data.totalPnl, icon: Zap, color: 'text-violet-500', bg: 'bg-violet-50' },
+    { label: '灵活取用', value: overview.totalAssets, icon: Wallet, color: 'text-green-500', bg: 'bg-green-50' },
+    { label: '总投资', value: overview.totalInvestments, icon: TrendingUp, color: 'text-amber-500', bg: 'bg-amber-50' },
+    { label: '总负债', value: overview.totalLiabilities, icon: TrendingDown, color: 'text-red-500', bg: 'bg-red-50' },
+    { label: '净资产', value: overview.netWorth, icon: PiggyBank, color: 'text-blue-500', bg: 'bg-blue-50' },
+    { label: '投资盈亏', value: overview.totalPnl, icon: Zap, color: 'text-violet-500', bg: 'bg-violet-50' },
   ]
 
-  const formatMoney = (v: number) => {
-    return v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  }
+  const chartData: ChartPoint[] = snapshots.map((snapshot) => ({
+    _ts: snapshot.timestamp,
+    资产: snapshot.totalAssets,
+    投资: snapshot.totalInvestments,
+    负债: snapshot.totalLiabilities,
+    净资产: snapshot.netWorth,
+    投资盈亏: snapshot.totalPnl,
+  }))
 
   return (
-    <div>
+    <div aria-busy={loading}>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         {cards.map((card) => (
           <div key={card.label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
@@ -99,338 +73,168 @@ export default function Dashboard({ refreshKey }: Props) {
                 <card.icon className={`w-4 h-4 ${card.color}`} />
               </div>
             </div>
-            <p className={`text-lg font-bold ${card.color}`}>
-              ¥{formatMoney(card.value)}
-            </p>
+            <p className={`text-lg font-bold ${card.color}`}>¥{formatMoney(card.value)}</p>
           </div>
         ))}
       </div>
-      <OverviewTrends accounts={accounts} refreshKey={refreshKey} />
+      <OverviewTrends data={chartData} />
     </div>
   )
 }
 
-type ChartMode = 'all' | 'networth' | 'investment' | 'pnl'
-
-function OverviewTrends({ accounts, refreshKey }: { accounts: Account[]; refreshKey: number }) {
-  const [chartData, setChartData] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+function OverviewTrends({ data }: { data: ChartPoint[] }) {
   const [scaleMode, setScaleMode] = useState<'adaptive' | 'zero'>('adaptive')
   const [chartMode, setChartMode] = useState<ChartMode>('all')
 
-  useEffect(() => {
-    loadTrendData()
-  }, [accounts, refreshKey])
+  if (data.length === 0) return null
 
-  const loadTrendData = async () => {
-    if (accounts.length === 0) { setLoading(false); return }
-
-    const accountIds = accounts.map(a => a.id)
-    const { data: balances } = await supabase
-      .from('balances')
-      .select('*')
-      .in('account_id', accountIds)
-      .order('recorded_at', { ascending: true })
-      .returns<Balance[]>()
-
-    if (!balances || balances.length === 0) { setLoading(false); return }
-
-    const accountTypeMap = new Map(accounts.map(a => [a.id, a.type]))
-
-    // 按天分组，每个账户每天只保留最后一条记录
-    const dayMap = new Map<string, Map<string, number>>()
-    balances.forEach((b) => {
-      const d = new Date(b.recorded_at)
-      const dayKey = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-      if (!dayMap.has(dayKey)) dayMap.set(dayKey, new Map())
-      dayMap.get(dayKey)!.set(b.account_id, b.amount)
-    })
-
-    // 一天一个数据点，累计状态
-    const sortedDays = Array.from(dayMap.keys()).sort()
-    const currentAmounts = new Map<string, number>()
-    const data = sortedDays.map((dayKey) => {
-      const dayBalances = dayMap.get(dayKey)!
-      dayBalances.forEach((amount, accId) => {
-        currentAmounts.set(accId, amount)
-      })
-
-      let assets = 0, investments = 0, liabilities = 0, pnl = 0
-      currentAmounts.forEach((amount, accId) => {
-        const type = accountTypeMap.get(accId)
-        if (type === 'asset') assets += amount
-        else if (type === 'investment') investments += amount
-        else if (type === 'liability') liabilities += amount
-        else if (type === 'pnl') pnl += amount
-      })
-
-      const [y, m, d] = dayKey.split('/').map(Number)
-      const noonTs = new Date(y, m - 1, d, 12, 0, 0).getTime()
-
-      return {
-        _ts: noonTs,
-        资产: assets,
-        投资: investments,
-        负债: liabilities,
-        净资产: assets + investments - liabilities,
-        投资盈亏: pnl,
-      }
-    })
-
-    setChartData(data)
-    setLoading(false)
-  }
-
-  if (loading || chartData.length === 0) return null
-
-  // Compute Y domain for all-lines view
-  const allValues = chartData.flatMap(d => [d.资产, d.投资, d.负债, d.净资产])
+  const allValues = data.flatMap((point) => [point.资产, point.投资, point.负债, point.净资产])
   const dataMin = Math.min(...allValues)
   const dataMax = Math.max(...allValues)
-  const range = dataMax - dataMin || 1
-  const padding = range * 0.15
+  const padding = (dataMax - dataMin || 1) * 0.15
   const yDomain: [number, number] = scaleMode === 'adaptive'
     ? [dataMin - padding, dataMax + padding]
-    : [0, dataMax + padding]
+    : [Math.min(0, dataMin - padding), Math.max(0, dataMax + padding)]
 
-  const modeLabel = chartMode === 'all' ? '资产变化趋势' : chartMode === 'networth' ? '净资产变化趋势' : chartMode === 'investment' ? '投资变化趋势' : '投资盈亏趋势'
+  const modes: { value: ChartMode; label: string }[] = [
+    { value: 'all', label: '总览' },
+    { value: 'networth', label: '净资产' },
+    { value: 'investment', label: '投资' },
+    { value: 'pnl', label: '投资盈亏' },
+  ]
+  const modeLabel = modes.find((mode) => mode.value === chartMode)?.label ?? '总览'
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-600">{modeLabel}</h3>
-        <div className="flex items-center gap-2">
+    <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h3 className="text-sm font-semibold text-gray-600">{modeLabel}变化趋势</h3>
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
-            <button
-              onClick={() => setChartMode('all')}
-              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'all' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-            >
-              总览
-            </button>
-            <button
-              onClick={() => setChartMode('networth')}
-              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'networth' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-            >
-              净资产
-            </button>
-            <button
-              onClick={() => setChartMode('investment')}
-              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'investment' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-            >
-              投资
-            </button>
-            <button
-              onClick={() => setChartMode('pnl')}
-              className={`px-2 py-0.5 cursor-pointer transition ${chartMode === 'pnl' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-            >
-              投资盈亏
-            </button>
+            {modes.map((mode) => (
+              <button
+                key={mode.value}
+                type="button"
+                onClick={() => setChartMode(mode.value)}
+                className={`px-2 py-1 cursor-pointer transition ${chartMode === mode.value ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                {mode.label}
+              </button>
+            ))}
           </div>
           {chartMode === 'all' && (
             <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
-              <button
-                onClick={() => setScaleMode('adaptive')}
-                className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'adaptive' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-              >
-                自适应
-              </button>
-              <button
-                onClick={() => setScaleMode('zero')}
-                className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'zero' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-              >
-                从零开始
-              </button>
+              {(['adaptive', 'zero'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setScaleMode(mode)}
+                  className={`px-2 py-1 cursor-pointer transition ${scaleMode === mode ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                >
+                  {mode === 'adaptive' ? '自适应' : '包含零点'}
+                </button>
+              ))}
             </div>
           )}
         </div>
       </div>
       <div className="h-64">
-        {chartMode === 'all' && <TrendChartContent data={chartData} yDomain={yDomain} />}
-        {chartMode === 'networth' && <NetWorthChartContent data={chartData} />}
-        {chartMode === 'investment' && <InvestmentChartContent data={chartData} />}
-        {chartMode === 'pnl' && <PnlChartContent data={chartData} />}
+        {chartMode === 'all' && <OverviewChart data={data} yDomain={yDomain} />}
+        {chartMode === 'networth' && <SingleMetricChart data={data} dataKey="净资产" color="#3b82f6" gradientId="net-worth-gradient" />}
+        {chartMode === 'investment' && <SingleMetricChart data={data} dataKey="投资" color="#f59e0b" gradientId="investment-gradient" />}
+        {chartMode === 'pnl' && <SingleMetricChart data={data} dataKey="投资盈亏" color="#8b5cf6" gradientId="pnl-gradient" />}
       </div>
-    </div>
+    </section>
   )
 }
 
-/** 自定义 Tooltip：过滤 Area+Line 产生的重复 dataKey 条目 */
-function CustomTooltip({ active, payload, label }: any) {
-  if (!active || !payload || !payload.length) return null
+function OverviewChart({ data, yDomain }: { data: ChartPoint[]; yDomain: [number, number] }) {
+  const series = [
+    { key: '资产', color: '#22c55e', gradient: 'asset-gradient' },
+    { key: '投资', color: '#f59e0b', gradient: 'overview-investment-gradient' },
+    { key: '负债', color: '#ef4444', gradient: 'liability-gradient' },
+    { key: '净资产', color: '#3b82f6', gradient: 'overview-net-worth-gradient' },
+  ] as const
 
-  const seen = new Set<string>()
-  const unique = payload.filter((p: any) => {
-    if (seen.has(p.name)) return false
-    seen.add(p.name)
-    return true
-  })
-
-  return (
-    <div style={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', background: '#fff', padding: '8px 12px' }}>
-      <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#9ca3af' }}>
-        {new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
-      </p>
-      {unique.map((entry: any) => (
-        <p key={entry.name} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.color, display: 'inline-block', flexShrink: 0 }} />
-          {entry.name}：¥{Number(entry.value).toLocaleString()}
-        </p>
-      ))}
-    </div>
-  )
-}
-
-function TrendChartContent({ data, yDomain }: { data: any[]; yDomain: [number, number] }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
         <defs>
-          <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#22c55e" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="#22c55e" stopOpacity={0.01} />
-          </linearGradient>
-          <linearGradient id="amberGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.2} />
-            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.01} />
-          </linearGradient>
-          <linearGradient id="redGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
-            <stop offset="100%" stopColor="#ef4444" stopOpacity={0.01} />
-          </linearGradient>
-          <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
-          </linearGradient>
+          {series.map((item) => (
+            <linearGradient key={item.gradient} id={item.gradient} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={item.color} stopOpacity={0.25} />
+              <stop offset="100%" stopColor={item.color} stopOpacity={0.01} />
+            </linearGradient>
+          ))}
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
-        <XAxis
-          dataKey="_ts"
-          type="number"
-          domain={['dataMin', 'dataMax']}
-          tick={{ fontSize: 11 }}
-          stroke="#c4b5e0"
-          tickFormatter={(ts: number) => {
-            const d = new Date(ts)
-            return `${d.getMonth() + 1}/${d.getDate()}`
-          }}
-        />
-        <YAxis
-          domain={yDomain}
-          tick={{ fontSize: 11 }}
-          stroke="#c4b5e0"
-          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`}
-          width={50}
-        />
-        <Tooltip content={<CustomTooltip />} />
+        <ChartAxes yDomain={yDomain} />
+        <Tooltip formatter={(value, name) => [`¥${formatMoney(Number(value))}`, String(name)]} labelFormatter={formatChartDate} />
         <Legend iconType="plainline" />
-        <Area type="monotone" dataKey="资产" fill="url(#greenGrad)" stroke="none" legendType="none" />
-        <Line type="monotone" dataKey="资产" stroke="#22c55e" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="投资" fill="url(#amberGrad)" stroke="none" legendType="none" />
-        <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="负债" fill="url(#redGrad)" stroke="none" legendType="none" />
-        <Line type="monotone" dataKey="负债" stroke="#ef4444" strokeWidth={2.5} dot={false} />
-        <Area type="monotone" dataKey="净资产" fill="url(#blueGrad)" stroke="none" legendType="none" />
-        <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
+        {series.map((item) => (
+          <Area key={`${item.key}-area`} type="monotone" dataKey={item.key} fill={`url(#${item.gradient})`} stroke="none" legendType="none" tooltipType="none" />
+        ))}
+        {series.map((item) => (
+          <Line key={item.key} type="monotone" dataKey={item.key} stroke={item.color} strokeWidth={item.key === '净资产' ? 3 : 2.5} dot={false} />
+        ))}
       </LineChart>
     </ResponsiveContainer>
   )
 }
 
-function NetWorthChartContent({ data }: { data: any[] }) {
-  const values = data.map(d => d.净资产)
+function SingleMetricChart({
+  data,
+  dataKey,
+  color,
+  gradientId,
+}: {
+  data: ChartPoint[]
+  dataKey: MetricKey
+  color: string
+  gradientId: string
+}) {
+  const values = data.map((point) => point[dataKey])
   const dataMin = Math.min(...values)
   const dataMax = Math.max(...values)
-  const range = dataMax - dataMin || 1
-  const padding = range * 0.18
-  const yDomain: [number, number] = [dataMin - padding, dataMax + padding]
+  const padding = (dataMax - dataMin || 1) * 0.18
+  const domain: [number, number] = [dataMin - padding, dataMax + padding]
 
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
         <defs>
-          <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={color} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
-        <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11 }} stroke="#c4b5e0"
-          tickFormatter={(ts: number) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}` }} />
-        <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0"
-          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`} width={50} />
-        <Tooltip
-          formatter={(value) => [`¥${Number(value).toLocaleString()}`, '净资产']}
-          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
-        <Area type="monotone" dataKey="净资产" fill="url(#nwGrad)" stroke="none" legendType="none" />
-        <Line type="monotone" dataKey="净资产" stroke="#3b82f6" strokeWidth={3} dot={false} />
+        <ChartAxes yDomain={domain} />
+        <Tooltip formatter={(value) => [`¥${formatMoney(Number(value))}`, dataKey]} labelFormatter={formatChartDate} />
+        <Area type="monotone" dataKey={dataKey} fill={`url(#${gradientId})`} stroke="none" legendType="none" tooltipType="none" />
+        <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={3} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   )
 }
 
-function InvestmentChartContent({ data }: { data: any[] }) {
-  const values = data.map(d => d.投资)
-  const dataMin = Math.min(...values)
-  const dataMax = Math.max(...values)
-  const range = dataMax - dataMin || 1
-  const padding = range * 0.18
-  const yDomain: [number, number] = [dataMin - padding, dataMax + padding]
-
+function ChartAxes({ yDomain }: { yDomain: [number, number] }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-        <defs>
-          <linearGradient id="invGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
-        <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11 }} stroke="#c4b5e0"
-          tickFormatter={(ts: number) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}` }} />
-        <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0"
-          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`} width={50} />
-        <Tooltip
-          formatter={(value) => [`¥${Number(value).toLocaleString()}`, '投资']}
-          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
-        <Area type="monotone" dataKey="投资" fill="url(#invGrad)" stroke="none" legendType="none" />
-        <Line type="monotone" dataKey="投资" stroke="#f59e0b" strokeWidth={3} dot={false} />
-      </LineChart>
-    </ResponsiveContainer>
+    <>
+      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
+      <XAxis
+        dataKey="_ts"
+        type="number"
+        domain={['dataMin', 'dataMax']}
+        tick={{ fontSize: 11 }}
+        stroke="#c4b5e0"
+        tickFormatter={(timestamp: number) => {
+          const date = new Date(timestamp)
+          return `${date.getMonth() + 1}/${date.getDate()}`
+        }}
+      />
+      <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0" tickFormatter={formatCompactMoney} width={58} />
+    </>
   )
 }
 
-function PnlChartContent({ data }: { data: any[] }) {
-  const values = data.map(d => d.投资盈亏)
-  const dataMin = Math.min(...values)
-  const dataMax = Math.max(...values)
-  const range = dataMax - dataMin || 1
-  const padding = range * 0.18
-  const yDomain: [number, number] = [dataMin - padding, dataMax + padding]
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-        <defs>
-          <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
-        <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11 }} stroke="#c4b5e0"
-          tickFormatter={(ts: number) => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()}` }} />
-        <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0"
-          tickFormatter={(v: number) => `¥${(v / 10000).toFixed(0)}万`} width={50} />
-        <Tooltip
-          formatter={(value) => [`¥${Number(value).toLocaleString()}`, '投资盈亏']}
-          labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric' })}
-          contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
-        <Area type="monotone" dataKey="投资盈亏" fill="url(#pnlGrad)" stroke="none" legendType="none" />
-        <Line type="monotone" dataKey="投资盈亏" stroke="#8b5cf6" strokeWidth={3} dot={false} />
-      </LineChart>
-    </ResponsiveContainer>
-  )
+function formatChartDate(label: unknown): string {
+  return new Date(Number(label)).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })
 }
