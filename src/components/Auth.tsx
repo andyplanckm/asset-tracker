@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ArrowRight, LockKeyhole, Mail, WalletCards } from 'lucide-react'
 import { errorMessage, supabase } from '../lib/supabase'
 
 export default function Auth() {
@@ -31,44 +32,59 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100 px-4">
-      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-blue-600 mb-2">资产总览</h1>
-          <p className="text-gray-500">记录你的每一笔财富</p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+      <div className="absolute -left-24 top-1/4 h-72 w-72 rounded-full bg-blue-200/40 blur-3xl" />
+      <div className="absolute -right-24 bottom-1/4 h-72 w-72 rounded-full bg-violet-200/40 blur-3xl" />
+      <div className="relative w-full max-w-md rounded-3xl border border-white/80 bg-white/85 p-6 shadow-2xl shadow-slate-300/30 backdrop-blur-xl sm:p-9">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-200">
+            <WalletCards className="h-7 w-7" aria-hidden="true" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">资产总览</h1>
+          <p className="mt-2 text-sm text-slate-400">让每一笔财富都有迹可循</p>
         </div>
 
-        <h2 className="text-xl font-semibold text-gray-800 mb-6">
+        <h2 className="mb-6 text-lg font-semibold text-slate-800">
           {isSignUp ? '创建账号' : '登录'}
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">邮箱</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
-              placeholder="your@email.com"
-              required
-            />
+            <label htmlFor="auth-email" className="mb-1.5 block text-sm font-medium text-slate-600">邮箱</label>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input
+                id="auth-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white/80 py-3 pl-10 pr-4 text-sm text-slate-800 transition placeholder:text-slate-300 hover:border-slate-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                placeholder="your@email.com"
+                autoComplete="email"
+                required
+              />
+            </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">密码</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
-              placeholder="至少6位密码"
-              required
-              minLength={6}
-            />
+            <label htmlFor="auth-password" className="mb-1.5 block text-sm font-medium text-slate-600">密码</label>
+            <div className="relative">
+              <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input
+                id="auth-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white/80 py-3 pl-10 pr-4 text-sm text-slate-800 transition placeholder:text-slate-300 hover:border-slate-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                placeholder="至少 6 位密码"
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                required
+                minLength={6}
+              />
+            </div>
           </div>
 
           {feedback && (
-            <p role="status" className={`text-sm ${feedback.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+            <p role="status" className={`rounded-xl px-3 py-2.5 text-sm ${feedback.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
               {feedback.message}
             </p>
           )}
@@ -76,18 +92,19 @@ export default function Auth() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-medium rounded-lg transition cursor-pointer"
+            className="group flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-200/70 transition hover:bg-blue-700 disabled:cursor-wait disabled:bg-blue-300"
           >
             {loading ? '处理中...' : isSignUp ? '注册' : '登录'}
+            {!loading && <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden="true" />}
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
+        <p className="mt-7 text-center text-sm text-slate-400">
           {isSignUp ? '已有账号？' : '没有账号？'}
           <button
             type="button"
             onClick={() => { setIsSignUp(!isSignUp); setFeedback(null) }}
-            className="text-blue-500 hover:text-blue-600 font-medium ml-1 cursor-pointer"
+            className="ml-1 cursor-pointer font-semibold text-blue-600 hover:text-blue-700"
           >
             {isSignUp ? '去登录' : '去注册'}
           </button>
