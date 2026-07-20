@@ -1,20 +1,10 @@
-export interface Account {
-  id: string
-  user_id: string
-  name: string
-  type: 'asset' | 'investment' | 'liability' | 'pnl'
-  icon: string
-  created_at: string
-}
+import type { AccountType, Database } from './database.types'
 
-export interface Balance {
-  id: string
-  account_id: string
-  user_id: string
-  amount: number
-  recorded_at: string
-  created_at: string
-}
+export type { AccountType }
+
+export type Account = Database['public']['Tables']['accounts']['Row']
+
+export type Balance = Database['public']['Tables']['balances']['Row']
 
 export interface AccountWithBalance extends Account {
   latest_balance: number | null

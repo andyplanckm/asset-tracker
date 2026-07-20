@@ -1,135 +1,72 @@
-import { useEffect, useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area } from 'recharts'
-import { supabase } from '../lib/supabase'
+import { useId, useMemo, useState } from 'react'
+import { Area, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { formatCompactMoney, formatMoney, localNoonTimestamp } from '../lib/domain'
 import type { Balance } from '../lib/types'
 
 interface Props {
-  accountId: string
+  balances: Balance[]
 }
 
 type ScaleMode = 'adaptive' | 'zero'
 
-export default function TrendChart({ accountId }: Props) {
-  const [data, setData] = useState<{ date: string; amount: number; _ts: number }[]>([])
+export default function TrendChart({ balances }: Props) {
   const [scaleMode, setScaleMode] = useState<ScaleMode>('adaptive')
-
-  useEffect(() => {
-    loadData()
-  }, [accountId])
-
-  const loadData = async () => {
-    const { data: balances } = await supabase
-      .from('balances')
-      .select('*')
-      .eq('account_id', accountId)
-      .order('recorded_at', { ascending: true })
-      .returns<Balance[]>()
-
-    if (!balances || balances.length === 0) {
-      setData([])
-      return
+  const gradientId = `account-gradient-${useId().replace(/:/g, '')}`
+  const data = useMemo(() => {
+    const latestByDay = new Map<string, Balance>()
+    for (const balance of [...balances].sort((left, right) => left.recorded_at.localeCompare(right.recorded_at))) {
+      latestByDay.set(balance.recorded_on, balance)
     }
-
-    // 按天分组，每天只保留最后一条记录
-    const dayMap = new Map<string, number>()
-    balances.forEach((b) => {
-      const d = new Date(b.recorded_at)
-      const key = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-      dayMap.set(key, b.amount)
-    })
-
-    const chartData = Array.from(dayMap.entries())
-      .map(([key, amount]) => {
-        const [y, m, d] = key.split('/').map(Number)
-        const noonTs = new Date(y, m - 1, d, 12, 0, 0).getTime()
-        return {
-          date: new Date(noonTs).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
-          amount,
-          _ts: noonTs,
-        }
-      })
-      .sort((a, b) => a._ts - b._ts)
-
-    setData(chartData)
-  }
-
-  const amounts = data.map(d => d.amount)
-  const dataMin = Math.min(...amounts)
-  const dataMax = Math.max(...amounts)
-  const range = dataMax - dataMin || 1
-  const padding = range * 0.15
-
-  const yDomain: [number, number] = scaleMode === 'adaptive'
-    ? [dataMin - padding, dataMax + padding]
-    : [0, dataMax + padding]
+    return [...latestByDay.values()]
+      .sort((left, right) => left.recorded_on.localeCompare(right.recorded_on))
+      .map((balance) => ({
+        _ts: localNoonTimestamp(balance.recorded_on),
+        amount: balance.amount,
+      }))
+  }, [balances])
 
   if (data.length < 2) {
-    return (
-      <div className="text-center text-gray-400 text-sm py-8">
-        至少需要2次记录才能显示趋势图
-      </div>
-    )
+    return <div className="text-center text-gray-400 text-sm py-8">至少需要2次记录才能显示趋势图</div>
   }
+
+  const amounts = data.map((point) => point.amount)
+  const dataMin = Math.min(...amounts)
+  const dataMax = Math.max(...amounts)
+  const padding = (dataMax - dataMin || 1) * 0.15
+  const yDomain: [number, number] = scaleMode === 'adaptive'
+    ? [dataMin - padding, dataMax + padding]
+    : [Math.min(0, dataMin - padding), Math.max(0, dataMax + padding)]
 
   return (
     <div className="h-52">
       <div className="flex items-center justify-end mb-1">
         <div className="flex rounded-md overflow-hidden border border-gray-200 text-[10px]">
-          <button
-            onClick={() => setScaleMode('adaptive')}
-            className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'adaptive' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            自适应
-          </button>
-          <button
-            onClick={() => setScaleMode('zero')}
-            className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === 'zero' ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            从零开始
-          </button>
+          {(['adaptive', 'zero'] as const).map((mode) => (
+            <button key={mode} type="button" onClick={() => setScaleMode(mode)}
+              className={`px-2 py-0.5 cursor-pointer transition ${scaleMode === mode ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+              {mode === 'adaptive' ? '自适应' : '包含零点'}
+            </button>
+          ))}
         </div>
       </div>
       <ResponsiveContainer width="100%" height="90%">
         <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <defs>
-            <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
               <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.6} />
-          <XAxis
-            dataKey="_ts"
-            type="number"
-            domain={['dataMin', 'dataMax']}
-            tick={{ fontSize: 11 }}
-            stroke="#c4b5e0"
-            tickFormatter={(ts: number) => {
-              const d = new Date(ts)
-              return `${d.getMonth() + 1}/${d.getDate()}`
-            }}
-          />
-          <YAxis
-            domain={yDomain}
-            tick={{ fontSize: 11 }}
-            stroke="#c4b5e0"
-            tickFormatter={(v) => `¥${v}`}
-            width={50}
-          />
-          <Tooltip
-            formatter={(value) => [`¥${Number(value).toLocaleString()}`, '余额']}
-            labelFormatter={(label) => new Date(Number(label)).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-          />
-          <Area type="monotone" dataKey="amount" fill="url(#chartGradient)" stroke="none" legendType="none" />
-          <Line
-            type="monotone"
-            dataKey="amount"
-            stroke="#3b82f6"
-            strokeWidth={2.5}
+          <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11 }} stroke="#c4b5e0"
+            tickFormatter={(timestamp: number) => { const date = new Date(timestamp); return `${date.getMonth() + 1}/${date.getDate()}` }} />
+          <YAxis domain={yDomain} tick={{ fontSize: 11 }} stroke="#c4b5e0" tickFormatter={formatCompactMoney} width={58} />
+          <Tooltip formatter={(value) => [`¥${formatMoney(Number(value))}`, '余额']}
+            labelFormatter={(label) => new Date(Number(label)).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })} />
+          <Area type="monotone" dataKey="amount" fill={`url(#${gradientId})`} stroke="none" legendType="none" tooltipType="none" />
+          <Line type="monotone" dataKey="amount" stroke="#3b82f6" strokeWidth={2.5}
             dot={{ r: 3, fill: '#fff', stroke: '#3b82f6', strokeWidth: 2 }}
-            activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
-          />
+            activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>

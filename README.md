@@ -1,73 +1,46 @@
-# React + TypeScript + Vite
+# 资产总览
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+基于 React、TypeScript、Vite 和 Supabase 的个人资产快照应用。支持资产、投资、负债和投资盈亏账户，以及每日记录、批量录入、历史表格和趋势图。
 
-Currently, two official plugins are available:
+## 本地开发
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+要求 Node.js 20.19+ 或 22.12+。
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci
+cp .env.example .env
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+在 `.env` 中配置：
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```dotenv
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
+
+## Supabase
+
+全新项目可以在 SQL Editor 中执行 [`schema.sql`](./schema.sql)。已有数据库必须先应用 [`supabase/migrations/202607200001_optimize_daily_balances.sql`](./supabase/migrations/202607200001_optimize_daily_balances.sql)，再部署新版前端。
+
+如果当前仓库尚未连接 Supabase CLI，最直接的方式是把迁移文件全文复制到 Supabase SQL Editor 执行。迁移必须先成功提交，再合并并部署前端。
+
+迁移会：
+
+- 增加稳定的 `recorded_on` 业务日期；
+- 合并同一账户同一天的重复记录；
+- 增加 `(account_id, recorded_on)` 唯一约束以支持原子 upsert；
+- 增加查询索引和账户/用户一致性外键；
+- 收紧 RLS 策略到已认证用户。
+
+建议先在 Supabase 控制台创建数据库备份。迁移必须早于前端部署，否则新版查询会因为缺少 `recorded_on` 而失败。
+
+## 校验与部署
+
+```bash
+npm run lint
+npm run test
+npm run build
+```
+
+Vercel 需要配置与本地相同的两个 `VITE_SUPABASE_*` 环境变量。仓库根目录的 `vercel.json` 使用 `npm ci` 构建，并配置了 SPA 回退和基础安全响应头。

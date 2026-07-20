@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import Auth from './components/Auth'
 import Layout from './components/Layout'
 import Home from './pages/Home'
 
 export default function App() {
-  const [session, setSession] = useState<any>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export default function App() {
 
   return (
     <Layout>
-      <Home />
+      <Home userId={session.user.id} />
     </Layout>
   )
 }
