@@ -1,5 +1,21 @@
 BEGIN;
 
+-- Supabase 当前项目没有可用物理备份。先在未暴露给 PostgREST 的独立 schema
+-- 中保留迁移前快照，并撤销客户端角色权限，便于必要时人工恢复。
+CREATE SCHEMA IF NOT EXISTS migration_backups;
+REVOKE ALL ON SCHEMA migration_backups FROM PUBLIC, anon, authenticated;
+
+CREATE TABLE IF NOT EXISTS migration_backups.accounts_before_202607200001 AS
+SELECT * FROM public.accounts;
+
+CREATE TABLE IF NOT EXISTS migration_backups.balances_before_202607200001 AS
+SELECT * FROM public.balances;
+
+REVOKE ALL ON ALL TABLES IN SCHEMA migration_backups FROM PUBLIC, anon, authenticated;
+
+COMMENT ON SCHEMA migration_backups IS
+    'Private migration snapshots created before 202607200001; review and remove after the release is stable.';
+
 -- 统一账户类型约束。
 ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_type_check;
 ALTER TABLE accounts

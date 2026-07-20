@@ -28,6 +28,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 迁移会：
 
 - 增加稳定的 `recorded_on` 业务日期；
+- 在非公开的 `migration_backups` schema 中保留迁移前账户和余额快照；
 - 合并同一账户同一天的重复记录；
 - 增加 `(account_id, recorded_on)` 唯一约束以支持原子 upsert；
 - 增加查询索引和账户/用户一致性外键；
