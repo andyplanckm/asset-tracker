@@ -6,11 +6,11 @@ export default function Home({ userId }: { userId: string }) {
   const { accounts, balances, loading, error, refresh } = useAssetData(userId)
 
   return (
-    <div>
+    <div className="space-y-6">
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700 shadow-sm">
           {error}
-          <button type="button" onClick={() => void refresh()} className="ml-2 font-medium underline cursor-pointer">
+          <button type="button" onClick={() => void refresh()} className="ml-2 cursor-pointer font-semibold underline underline-offset-2">
             重试
           </button>
         </div>
