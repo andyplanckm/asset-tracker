@@ -16,11 +16,14 @@
 html {
   color-scheme: light;
   background: #f6f8fc;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 12% -8%, rgb(219 234 254 / 0.7), transparent 28rem),
     radial-gradient(circle at 92% 12%, rgb(237 233 254 / 0.55), transparent 24rem),
@@ -33,12 +36,17 @@ body {
 
 #root {
   min-height: 100vh;
+  min-width: 0;
 }
 
 button,
 input,
 select {
   font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
@@ -56,4 +64,15 @@ select:focus-visible {
 * {
   scrollbar-color: #cbd5e1 transparent;
   scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,32 +1,86 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from './lib/supabase'
 import Auth from './components/Auth'
-import Layout from './components/Layout'
-import Home from './pages/Home'
+import LoadingScreen from './components/LoadingScreen'
+import ResetPassword from './components/ResetPassword'
+import { errorMessage, supabase } from './lib/supabase'
+
+const AuthenticatedApp = lazy(() => import('./components/AuthenticatedApp'))
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [initializationError, setInitializationError] = useState('')
+  const [initializationAttempt, setInitializationAttempt] = useState(0)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let isActive = true
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isActive || event === 'INITIAL_SESSION') return
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
       setSession(session)
+      setInitializationError('')
       setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
+    const initializeSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession()
+        if (error) throw error
+        if (!isActive) return
 
-    return () => subscription.unsubscribe()
-  }, [])
+        setSession(data.session)
+        setLoading(false)
+      } catch (error) {
+        if (!isActive) return
+
+        setSession(null)
+        setLoading(false)
+        setInitializationError(errorMessage(error, '登录状态加载失败，请检查网络后重试'))
+      }
+    }
+
+    void initializeSession()
+
+    return () => {
+      isActive = false
+      subscription.unsubscribe()
+    }
+  }, [initializationAttempt])
+
+  const retryInitialization = () => {
+    setLoading(true)
+    setInitializationError('')
+    setInitializationAttempt((attempt) => attempt + 1)
+  }
 
   if (loading) {
+    return <LoadingScreen message="正在确认登录状态" />
+  }
+
+  if (initializationError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <p className="text-gray-400">加载中...</p>
-      </div>
+      <main className="flex min-h-screen items-center justify-center px-4 py-10">
+        <section
+          role="alert"
+          className="w-full max-w-md rounded-3xl border border-white/80 bg-white/90 p-7 text-center shadow-xl shadow-slate-300/25 backdrop-blur-xl"
+        >
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-xl text-red-500" aria-hidden="true">
+            !
+          </div>
+          <h1 className="text-lg font-semibold text-slate-900">暂时无法加载登录状态</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{initializationError}</p>
+          <button
+            type="button"
+            onClick={retryInitialization}
+            className="mt-6 cursor-pointer rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
+          >
+            重新连接
+          </button>
+        </section>
+      </main>
     )
   }
 
@@ -34,9 +88,13 @@ export default function App() {
     return <Auth />
   }
 
+  if (passwordRecovery) {
+    return <ResetPassword onComplete={() => setPasswordRecovery(false)} />
+  }
+
   return (
-    <Layout>
-      <Home userId={session.user.id} />
-    </Layout>
+    <Suspense fallback={<LoadingScreen message="正在加载资产数据" />}>
+      <AuthenticatedApp key={session.user.id} userId={session.user.id} />
+    </Suspense>
   )
 }

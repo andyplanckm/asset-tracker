@@ -21,7 +21,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 ## Supabase
 
-全新项目可以在 SQL Editor 中执行 [`schema.sql`](./schema.sql)。已有数据库必须先应用 [`supabase/migrations/202607200001_optimize_daily_balances.sql`](./supabase/migrations/202607200001_optimize_daily_balances.sql)，再部署新版前端。
+全新项目可以在 SQL Editor 中执行 [`schema.sql`](./schema.sql)。已有数据库必须按顺序应用 [`supabase/migrations`](./supabase/migrations) 中尚未执行的迁移，再部署新版前端；本次新增的 [`202607300001_lock_account_type_with_history.sql`](./supabase/migrations/202607300001_lock_account_type_with_history.sql) 会锁定已有余额历史的账户类型。
 
 如果当前仓库尚未连接 Supabase CLI，最直接的方式是把迁移文件全文复制到 Supabase SQL Editor 执行。迁移必须先成功提交，再合并并部署前端。
 
@@ -33,6 +33,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 - 增加 `(account_id, recorded_on)` 唯一约束以支持原子 upsert；
 - 增加查询索引和账户/用户一致性外键；
 - 收紧 RLS 策略到已认证用户。
+- 阻止修改已有历史记录账户的类型，避免旧数据被重新解释。
 
 建议先在 Supabase 控制台创建数据库备份。迁移必须早于前端部署，否则新版查询会因为缺少 `recorded_on` 而失败。
 
