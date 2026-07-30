@@ -12,6 +12,17 @@ export interface DailySnapshot {
   netWorth: number
 }
 
+export interface ValueChange {
+  amount: number
+  percentage: number | null
+}
+
+export interface BalanceSummary {
+  current: Balance | null
+  previous: Balance | null
+  change: ValueChange | null
+}
+
 export function localDateString(date = new Date()): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -35,6 +46,45 @@ export function formatCompactMoney(value: number): string {
   const absolute = Math.abs(value)
   if (absolute >= 10_000) return `¥${(value / 10_000).toFixed(1).replace(/\.0$/, '')}万`
   return `¥${Math.round(value).toLocaleString('zh-CN')}`
+}
+
+export function formatSignedMoney(value: number): string {
+  if (value === 0) return `¥${formatMoney(0)}`
+  return `${value > 0 ? '+' : '-'}¥${formatMoney(Math.abs(value))}`
+}
+
+export function calculateChange(current: number, previous: number): ValueChange {
+  return {
+    amount: current - previous,
+    percentage: previous === 0 ? null : ((current - previous) / Math.abs(previous)) * 100,
+  }
+}
+
+export function filterSnapshotsByDays(snapshots: DailySnapshot[], days: number | null): DailySnapshot[] {
+  if (days === null || snapshots.length === 0) return snapshots
+  const latestTimestamp = snapshots.at(-1)?.timestamp ?? 0
+  const cutoff = latestTimestamp - (days - 1) * 24 * 60 * 60 * 1_000
+  return snapshots.filter((snapshot) => snapshot.timestamp >= cutoff)
+}
+
+export function summarizeBalances(balances: Balance[]): BalanceSummary {
+  const latestByDay = new Map<string, Balance>()
+  for (const balance of [...balances].sort((left, right) => {
+    const byDate = left.recorded_on.localeCompare(right.recorded_on)
+    return byDate !== 0 ? byDate : left.recorded_at.localeCompare(right.recorded_at)
+  })) {
+    latestByDay.set(balance.recorded_on, balance)
+  }
+
+  const dailyBalances = [...latestByDay.values()]
+  const current = dailyBalances.at(-1) ?? null
+  const previous = dailyBalances.at(-2) ?? null
+
+  return {
+    current,
+    previous,
+    change: current && previous ? calculateChange(current.amount, previous.amount) : null,
+  }
 }
 
 export function isValidAmount(type: AccountType, value: number): boolean {

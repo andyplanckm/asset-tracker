@@ -3,56 +3,89 @@ import { errorMessage, supabase } from '../lib/supabase'
 import type { Account, Balance } from '../lib/types'
 
 interface AssetDataState {
+  userId: string
   accounts: Account[]
   balances: Balance[]
   loading: boolean
   error: string
 }
 
-const initialState: AssetDataState = {
-  accounts: [],
-  balances: [],
-  loading: true,
-  error: '',
+const BALANCE_PAGE_SIZE = 500
+const BALANCE_COLUMNS = 'id,account_id,user_id,amount,recorded_on,recorded_at,created_at'
+
+function createInitialState(userId: string): AssetDataState {
+  return {
+    userId,
+    accounts: [],
+    balances: [],
+    loading: true,
+    error: '',
+  }
+}
+
+async function fetchAllBalances(userId: string, isCurrentRequest: () => boolean): Promise<Balance[]> {
+  const balances: Balance[] = []
+  let from = 0
+
+  while (isCurrentRequest()) {
+    const { data, error } = await supabase
+      .from('balances')
+      .select(BALANCE_COLUMNS)
+      .eq('user_id', userId)
+      .order('recorded_on', { ascending: true })
+      .order('recorded_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + BALANCE_PAGE_SIZE - 1)
+
+    if (error) throw error
+    if (!isCurrentRequest()) return balances
+
+    const page = data ?? []
+    balances.push(...page)
+
+    if (page.length < BALANCE_PAGE_SIZE) break
+    from += BALANCE_PAGE_SIZE
+  }
+
+  return balances
 }
 
 export function useAssetData(userId: string) {
-  const [state, setState] = useState(initialState)
+  const [state, setState] = useState<AssetDataState>(() => createInitialState(userId))
   const requestId = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
     const currentRequest = ++requestId.current
-    setState((previous) => ({ ...previous, loading: true, error: '' }))
+    const isCurrentRequest = () => currentRequest === requestId.current
+
+    setState((previous) => previous.userId === userId
+      ? { ...previous, loading: true, error: '' }
+      : createInitialState(userId))
 
     try {
-      const [accountsResult, balancesResult] = await Promise.all([
+      const [accountsResult, balances] = await Promise.all([
         supabase
           .from('accounts')
           .select('id,user_id,name,type,icon,created_at')
           .eq('user_id', userId)
           .order('created_at', { ascending: false }),
-        supabase
-          .from('balances')
-          .select('id,account_id,user_id,amount,recorded_on,recorded_at,created_at')
-          .eq('user_id', userId)
-          .order('recorded_on', { ascending: true })
-          .order('recorded_at', { ascending: true }),
+        fetchAllBalances(userId, isCurrentRequest),
       ])
 
       if (accountsResult.error) throw accountsResult.error
-      if (balancesResult.error) throw balancesResult.error
-      if (currentRequest !== requestId.current) return
+      if (!isCurrentRequest()) return
 
       setState({
+        userId,
         accounts: accountsResult.data,
-        balances: balancesResult.data,
+        balances,
         loading: false,
         error: '',
       })
     } catch (error) {
-      if (currentRequest !== requestId.current) return
+      if (!isCurrentRequest()) return
       setState((previous) => ({
-        ...previous,
+        ...(previous.userId === userId ? previous : createInitialState(userId)),
         loading: false,
         error: errorMessage(error, '资产数据加载失败，请稍后重试'),
       }))
@@ -61,10 +94,19 @@ export function useAssetData(userId: string) {
 
   useEffect(() => {
     void refresh()
+
     return () => {
       requestId.current += 1
     }
   }, [refresh])
 
-  return { ...state, refresh }
+  const visibleState = state.userId === userId ? state : createInitialState(userId)
+
+  return {
+    accounts: visibleState.accounts,
+    balances: visibleState.balances,
+    loading: visibleState.loading,
+    error: visibleState.error,
+    refresh,
+  }
 }

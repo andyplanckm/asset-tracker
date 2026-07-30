@@ -1,5 +1,5 @@
 -- 全新 Supabase 项目的初始化结构。
--- 已有项目请执行 supabase/migrations/202607200001_optimize_daily_balances.sql。
+-- 已有项目请按顺序执行 supabase/migrations/ 下的全部迁移。
 
 CREATE TABLE accounts (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -42,3 +42,33 @@ CREATE POLICY "Users can manage their own balances"
     ON balances FOR ALL TO authenticated
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.prevent_account_type_change_with_history()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF NEW.type IS DISTINCT FROM OLD.type
+       AND EXISTS (
+           SELECT 1
+           FROM public.balances
+           WHERE account_id = OLD.id
+       )
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '23514',
+            MESSAGE = 'account_type_locked_by_history';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER accounts_lock_type_with_history
+BEFORE UPDATE OF type ON public.accounts
+FOR EACH ROW
+EXECUTE FUNCTION public.prevent_account_type_change_with_history();
+
+COMMENT ON FUNCTION public.prevent_account_type_change_with_history() IS
+    'Prevents changing an account type after balance history exists, preserving historical meaning.';

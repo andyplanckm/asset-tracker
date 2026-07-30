@@ -54,5 +54,18 @@ export async function upsertBalance(
 }
 
 export function errorMessage(error: unknown, fallback = '操作失败，请重试'): string {
-  return error instanceof Error && error.message ? error.message : fallback
+  if (!(error instanceof Error) || !error.message) return fallback
+
+  const message = error.message.toLowerCase()
+  if (message.includes('invalid login credentials')) return '邮箱或密码不正确，请重新输入'
+  if (message.includes('email not confirmed')) return '邮箱尚未验证，请先查看确认邮件'
+  if (message.includes('user already registered')) return '该邮箱已经注册，请直接登录'
+  if (message.includes('password should be at least')) return '密码至少需要 6 位'
+  if (message.includes('rate limit') || message.includes('too many requests')) return '操作过于频繁，请稍后再试'
+  if (message.includes('failed to fetch') || message.includes('network')) return '网络连接失败，请检查网络后重试'
+  if (message.includes('row-level security') || message.includes('permission denied')) return '当前账户没有执行此操作的权限'
+  if (message.includes('duplicate key') || message.includes('already exists')) return '这条记录已经存在，请刷新后重试'
+  if (message.includes('jwt') || message.includes('token')) return '登录状态已过期，请重新登录'
+
+  return fallback
 }

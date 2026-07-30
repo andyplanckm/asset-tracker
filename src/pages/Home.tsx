@@ -1,9 +1,22 @@
+import { useMemo } from 'react'
 import Dashboard from '../components/Dashboard'
 import AccountList from '../components/AccountList'
 import { useAssetData } from '../hooks/useAssetData'
+import { buildDailySnapshots } from '../lib/domain'
+import type { Balance } from '../lib/types'
 
 export default function Home({ userId }: { userId: string }) {
   const { accounts, balances, loading, error, refresh } = useAssetData(userId)
+  const snapshots = useMemo(() => buildDailySnapshots(accounts, balances), [accounts, balances])
+  const balancesByAccount = useMemo(() => {
+    const grouped = new Map<string, Balance[]>()
+    for (const balance of balances) {
+      const accountBalances = grouped.get(balance.account_id) ?? []
+      accountBalances.push(balance)
+      grouped.set(balance.account_id, accountBalances)
+    }
+    return grouped
+  }, [balances])
 
   return (
     <div className="space-y-6">
@@ -15,11 +28,12 @@ export default function Home({ userId }: { userId: string }) {
           </button>
         </div>
       )}
-      <Dashboard accounts={accounts} balances={balances} loading={loading} />
+      <Dashboard accounts={accounts} snapshots={snapshots} loading={loading} />
       <AccountList
         userId={userId}
         accounts={accounts}
-        balances={balances}
+        balancesByAccount={balancesByAccount}
+        snapshots={snapshots}
         loading={loading}
         onDataChanged={refresh}
       />

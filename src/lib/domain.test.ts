@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { buildDailySnapshots, isValidAmount, localDateString, localNoonTimestamp } from './domain'
+import {
+  buildDailySnapshots,
+  calculateChange,
+  filterSnapshotsByDays,
+  isValidAmount,
+  localDateString,
+  localNoonTimestamp,
+  summarizeBalances,
+} from './domain'
 import type { Account, Balance } from './types'
 
 const accounts: Account[] = [
@@ -61,5 +69,38 @@ describe('buildDailySnapshots', () => {
     expect(snapshots[0].netWorth).toBe(500)
     expect(isValidAmount('pnl', -80)).toBe(true)
     expect(isValidAmount('asset', -80)).toBe(false)
+  })
+})
+
+describe('financial summaries', () => {
+  it('calculates signed amount and percentage changes', () => {
+    expect(calculateChange(1_250, 1_000)).toEqual({ amount: 250, percentage: 25 })
+    expect(calculateChange(100, 0)).toEqual({ amount: 100, percentage: null })
+  })
+
+  it('summarizes the latest distinct balance days', () => {
+    const summary = summarizeBalances([
+      balance('first', 'cash', 100, '2026-07-01'),
+      balance('same-day-latest', 'cash', 120, '2026-07-01', 8),
+      balance('second', 'cash', 150, '2026-07-02'),
+    ])
+
+    expect(summary.current?.amount).toBe(150)
+    expect(summary.previous?.amount).toBe(120)
+    expect(summary.change?.amount).toBe(30)
+  })
+
+  it('filters snapshots relative to the most recent recorded day', () => {
+    const snapshots = buildDailySnapshots(accounts, [
+      balance('old', 'cash', 100, '2026-01-01'),
+      balance('recent', 'cash', 200, '2026-07-01'),
+      balance('latest', 'cash', 300, '2026-07-20'),
+    ])
+
+    expect(filterSnapshotsByDays(snapshots, 30).map((snapshot) => snapshot.date)).toEqual([
+      '2026-07-01',
+      '2026-07-20',
+    ])
+    expect(filterSnapshotsByDays(snapshots, null)).toHaveLength(3)
   })
 })
