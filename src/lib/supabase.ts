@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
+import { localNoonTimestamp } from './domain'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -10,10 +11,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
 
-/** 将 YYYY-MM-DD 转为本地当天中午的 ISO 字符串，避免午夜附近的时区漂移。 */
+/** 将 YYYY-MM-DD 转为中国时区当天中午的 ISO 字符串，和业务日期规则保持一致。 */
 export function noonISO(dateStr: string): string {
-  const [year, month, day] = dateStr.split('-').map(Number)
-  return new Date(year, month - 1, day, 12, 0, 0).toISOString()
+  return new Date(localNoonTimestamp(dateStr)).toISOString()
 }
 
 export interface BalanceInput {
@@ -64,6 +64,8 @@ export function errorMessage(error: unknown, fallback = '操作失败，请重�
   if (message.includes('rate limit') || message.includes('too many requests')) return '操作过于频繁，请稍后再试'
   if (message.includes('failed to fetch') || message.includes('network')) return '网络连接失败，请检查网络后重试'
   if (message.includes('row-level security') || message.includes('permission denied')) return '当前账户没有执行此操作的权限'
+  if (message.includes('future_balance_date_not_allowed')) return '记录日期不能晚于今天（中国时区）'
+  if (message.includes('account_type_locked_by_history')) return '该账户已有历史记录，不能修改账户类型'
   if (message.includes('duplicate key') || message.includes('already exists')) return '这条记录已经存在，请刷新后重试'
   if (message.includes('jwt') || message.includes('token')) return '登录状态已过期，请重新登录'
 

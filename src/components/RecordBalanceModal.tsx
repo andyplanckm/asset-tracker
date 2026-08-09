@@ -21,12 +21,13 @@ export default function RecordBalanceModal({
   onClose,
   onSaved,
 }: Props) {
+  const today = localDateString()
   const summary = useMemo(() => summarizeBalances(balances), [balances])
   const balancesByDate = useMemo(
     () => [...balances].sort((left, right) => right.recorded_on.localeCompare(left.recorded_on)),
     [balances],
   )
-  const [date, setDate] = useState(() => localDateString())
+  const [date, setDate] = useState(today)
   const [amount, setAmount] = useState(() => {
     const latestOnOrBeforeToday = balancesByDate.find(
       (balance) => balance.recorded_on <= localDateString(),
@@ -35,6 +36,11 @@ export default function RecordBalanceModal({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const dateError = !date
+    ? '请选择记录日期'
+    : date > today
+      ? '记录日期不能晚于今天'
+      : ''
   const parsedAmount = Number(amount)
   const amountIsValid = amount !== '' && isValidAmount(account.type, parsedAmount)
   const existingOnDate = balancesByDate.find((balance) => balance.recorded_on === date)
@@ -53,6 +59,10 @@ export default function RecordBalanceModal({
 
   const handleSave = async (event: FormEvent) => {
     event.preventDefault()
+    if (dateError) {
+      setError(dateError)
+      return
+    }
     if (!amountIsValid) {
       setError(account.type === 'pnl' ? '请输入有效金额' : '余额不能为负数')
       return
@@ -92,7 +102,7 @@ export default function RecordBalanceModal({
           <button
             type="submit"
             form="record-balance-form"
-            disabled={saving || !amountIsValid || !date}
+            disabled={saving || !amountIsValid || Boolean(dateError)}
             className="min-h-11 cursor-pointer rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
           >
             {saving ? '保存中…' : existingOnDate ? '更新当日记录' : '保存记录'}
@@ -152,11 +162,19 @@ export default function RecordBalanceModal({
               id="balance-date"
               type="date"
               value={date}
+              max={today}
               onChange={(event) => handleDateChange(event.target.value)}
+              aria-invalid={Boolean(dateError)}
+              aria-describedby={dateError ? 'balance-date-error' : undefined}
               required
               className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-800 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
             />
           </div>
+          {dateError && (
+            <p id="balance-date-error" className="mt-1.5 text-xs font-medium text-red-600">
+              {dateError}
+            </p>
+          )}
         </div>
 
         {existingOnDate && (

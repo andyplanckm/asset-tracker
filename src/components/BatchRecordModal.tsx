@@ -10,6 +10,7 @@ import Money from './ui/Money'
 interface Props {
   userId: string
   accounts: AccountWithBalance[]
+  prefillLatest?: boolean
   onClose: () => void
   onSaved: () => Promise<void>
 }
@@ -28,13 +29,22 @@ const sections: {
 export default function BatchRecordModal({
   userId,
   accounts,
+  prefillLatest = false,
   onClose,
   onSaved,
 }: Props) {
-  const [date, setDate] = useState(localDateString())
-  const [amounts, setAmounts] = useState<Record<string, string>>({})
+  const today = localDateString()
+  const [date, setDate] = useState(today)
+  const [amounts, setAmounts] = useState<Record<string, string>>(() => (
+    prefillLatest ? getLatestAmounts(accounts) : {}
+  ))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const dateError = !date
+    ? '请选择记录日期'
+    : date > today
+      ? '记录日期不能晚于今天'
+      : ''
 
   const validationErrors = useMemo(() => {
     const errors = new Map<string, string>()
@@ -59,9 +69,7 @@ export default function BatchRecordModal({
   }), [accounts, amounts, validationErrors])
 
   const fillLatestBalances = () => {
-    setAmounts(Object.fromEntries(accounts.flatMap((account) => (
-      account.latest_balance === null ? [] : [[account.id, String(account.latest_balance)]]
-    ))))
+    setAmounts(getLatestAmounts(accounts))
     setError('')
   }
 
@@ -72,6 +80,10 @@ export default function BatchRecordModal({
 
   const handleSave = async (event: FormEvent) => {
     event.preventDefault()
+    if (dateError) {
+      setError(dateError)
+      return
+    }
     if (validationErrors.size > 0) {
       setError(`有 ${validationErrors.size} 个金额需要修正，尚未保存任何记录。`)
       return
@@ -96,8 +108,10 @@ export default function BatchRecordModal({
     <Dialog
       open
       onClose={onClose}
-      title="集中更新余额"
-      description="只会保存已填写的账户；留空的账户保持不变。"
+      title={prefillLatest ? '确认待更新账户' : '集中更新余额'}
+      description={prefillLatest
+        ? '已带入最近余额；空白账户需要填写。'
+        : '只保存已填写的账户。'}
       size="lg"
       showCloseButton={!saving}
       closeOnBackdrop={!saving}
@@ -120,7 +134,7 @@ export default function BatchRecordModal({
             <button
               type="submit"
               form="batch-record-form"
-              disabled={saving || entries.length === 0 || validationErrors.size > 0 || !date}
+              disabled={saving || entries.length === 0 || validationErrors.size > 0 || Boolean(dateError)}
               className="min-h-11 cursor-pointer rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
             >
               {saving ? '保存中…' : `保存 ${entries.length} 条记录`}
@@ -130,24 +144,37 @@ export default function BatchRecordModal({
       )}
     >
       <form id="batch-record-form" onSubmit={handleSave}>
-        <div className="sticky top-0 z-10 -mx-1 mb-5 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <label className="relative flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-slate-400" aria-hidden="true" />
-              <span className="sr-only">记录日期</span>
-              <input
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                required
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              />
-            </label>
+        <div className="-mx-1 mb-5 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <label className="relative flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                <span className="sr-only">记录日期</span>
+                <input
+                  type="date"
+                  value={date}
+                  max={today}
+                  onChange={(event) => {
+                    setDate(event.target.value)
+                    setError('')
+                  }}
+                  aria-invalid={Boolean(dateError)}
+                  aria-describedby={dateError ? 'batch-record-date-error' : undefined}
+                  required
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              {dateError && (
+                <p id="batch-record-date-error" className="mt-1.5 text-xs font-medium text-red-600">
+                  {dateError}
+                </p>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={fillLatestBalances}
-                className="flex min-h-9 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                className="flex min-h-10 cursor-pointer items-center gap-1.5 rounded-xl bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
               >
                 <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                 填入最近余额
@@ -155,7 +182,7 @@ export default function BatchRecordModal({
               <button
                 type="button"
                 onClick={clearAmounts}
-                className="flex min-h-9 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                className="flex min-h-10 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
               >
                 <Eraser className="h-3.5 w-3.5" aria-hidden="true" />
                 清空
@@ -166,7 +193,9 @@ export default function BatchRecordModal({
 
         <div className="mb-4 flex items-start gap-2 rounded-xl bg-blue-50 px-3 py-2.5 text-sm text-blue-800">
           <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <p>“填入最近余额”适合确认所有账户当天状态；也可以只填写本次发生变化的账户。</p>
+          <p>{prefillLatest
+            ? '确认金额无误即可保存；如果余额已变化，直接覆盖输入框里的金额。'
+            : '“填入最近余额”适合确认所有账户当天状态；也可以只填写本次发生变化的账户。'}</p>
         </div>
 
         {accounts.length === 0 ? (
@@ -186,9 +215,12 @@ export default function BatchRecordModal({
               <div className="space-y-2">
                 {sectionAccounts.map((account) => {
                   const fieldError = validationErrors.get(account.id)
+                  const inputId = `batch-balance-${account.id}`
+                  const errorId = `batch-balance-error-${account.id}`
                   return (
                     <label
                       key={account.id}
+                      htmlFor={inputId}
                       className={`grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 rounded-2xl border p-3 transition sm:grid-cols-[auto_minmax(0,1fr)_minmax(9rem,12rem)] ${
                         fieldError ? 'border-red-200 bg-red-50/40' : 'border-slate-100 bg-slate-50/50 focus-within:border-blue-200 focus-within:bg-white'
                       }`}
@@ -209,6 +241,7 @@ export default function BatchRecordModal({
                       <span className="relative col-span-2 sm:col-span-1">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">¥</span>
                         <input
+                          id={inputId}
                           type="number"
                           step="0.01"
                           min={account.type === 'pnl' ? undefined : 0}
@@ -222,6 +255,7 @@ export default function BatchRecordModal({
                           }}
                           aria-label={`${account.name} 的余额`}
                           aria-invalid={Boolean(fieldError)}
+                          aria-describedby={fieldError ? errorId : undefined}
                           className={`w-full rounded-xl border bg-white py-2.5 pl-8 pr-3 text-right text-sm tabular-nums text-slate-900 focus:outline-none focus:ring-2 ${
                             fieldError
                               ? 'border-red-300 focus:border-red-400 focus:ring-red-100'
@@ -230,7 +264,7 @@ export default function BatchRecordModal({
                           placeholder="留空则不更新"
                         />
                         {fieldError && (
-                          <span className="mt-1 block text-right text-xs text-red-600">{fieldError}</span>
+                          <span id={errorId} className="mt-1 block text-right text-xs text-red-600">{fieldError}</span>
                         )}
                       </span>
                     </label>
@@ -249,4 +283,10 @@ export default function BatchRecordModal({
       </form>
     </Dialog>
   )
+}
+
+function getLatestAmounts(accounts: AccountWithBalance[]): Record<string, string> {
+  return Object.fromEntries(accounts.flatMap((account) => (
+    account.latest_balance === null ? [] : [[account.id, String(account.latest_balance)]]
+  )))
 }

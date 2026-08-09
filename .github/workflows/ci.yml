@@ -13,9 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -27,3 +27,15 @@ jobs:
         run: npm run test
       - name: Build
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhbm9uIiwiaXNzIjoic3VwYWJhc2UiLCJyb2xlIjoiYW5vbiJ9.Y2ktcGxhY2Vob2xkZXI
+      - name: Smoke-check production bundle
+        shell: bash
+        run: |
+          test -s dist/index.html
+          entry_path="$(sed -n 's/.*src="\/\(assets\/index-[^"]*\.js\)".*/dist\/\1/p' dist/index.html)"
+          test -n "$entry_path"
+          test -s "$entry_path"
+          ! grep -Fq '请在 .env 文件中配置' "$entry_path"
+          find dist/assets -maxdepth 1 -type f -name 'AuthenticatedApp-*.js' -size +0c | grep -q .

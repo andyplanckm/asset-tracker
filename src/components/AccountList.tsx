@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   Calendar,
@@ -17,7 +18,15 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react'
-import { localDateString, summarizeBalances, type DailySnapshot } from '../lib/domain'
+import {
+  DEFAULT_BALANCE_STALE_DAYS,
+  getBalanceFreshness,
+  localDateString,
+  summarizeBalances,
+  type BalanceFreshness,
+  type BalanceSummary,
+  type DailySnapshot,
+} from '../lib/domain'
 import { AccountIcon } from '../lib/icons'
 import { errorMessage, supabase } from '../lib/supabase'
 import type { Account, AccountType, AccountWithBalance, Balance } from '../lib/types'
@@ -43,6 +52,7 @@ interface Props {
 
 type ViewMode = 'accounts' | 'history'
 type FilterType = 'all' | AccountType
+type BatchMode = 'all' | 'attention' | null
 
 const sectionDefinitions: {
   type: AccountType
@@ -97,11 +107,12 @@ export default function AccountList({
   const [recordAccount, setRecordAccount] = useState<Account | null>(null)
   const [historyAccount, setHistoryAccount] = useState<Account | null>(null)
   const [expandedCharts, setExpandedCharts] = useState<Set<string>>(new Set())
-  const [showBatchModal, setShowBatchModal] = useState(false)
+  const [batchMode, setBatchMode] = useState<BatchMode>(null)
   const [pendingDelete, setPendingDelete] = useState<Account | null>(null)
   const { showToast } = useToast()
 
-  const latestValues = snapshots.at(-1)?.values
+  const today = localDateString()
+  const latestValues = [...snapshots].reverse().find((snapshot) => snapshot.date <= today)?.values
   const accountsWithBalances: AccountWithBalance[] = useMemo(
     () => accounts.map((account) => ({
       ...account,
@@ -109,6 +120,44 @@ export default function AccountList({
     })),
     [accounts, latestValues],
   )
+  const latestSummariesByAccount = useMemo(
+    () => new Map(accounts.map((account) => [
+      account.id,
+      summarizeBalances(balancesByAccount.get(account.id) ?? []),
+    ])),
+    [accounts, balancesByAccount],
+  )
+  const freshnessByAccount = useMemo(
+    () => new Map(accounts.map((account) => [
+      account.id,
+      getBalanceFreshness(latestSummariesByAccount.get(account.id)?.current?.recorded_on ?? null),
+    ])),
+    [accounts, latestSummariesByAccount],
+  )
+  const attentionAccountIds = useMemo(
+    () => new Set(accounts
+      .filter((account) => freshnessByAccount.get(account.id)?.status !== 'fresh')
+      .map((account) => account.id)),
+    [accounts, freshnessByAccount],
+  )
+  const updatableAccountIds = useMemo(
+    () => new Set(accounts
+      .filter((account) => {
+        const status = freshnessByAccount.get(account.id)?.status
+        return status === 'missing' || status === 'stale'
+      })
+      .map((account) => account.id)),
+    [accounts, freshnessByAccount],
+  )
+  const missingCount = accounts.filter(
+    (account) => freshnessByAccount.get(account.id)?.status === 'missing',
+  ).length
+  const staleCount = accounts.filter(
+    (account) => freshnessByAccount.get(account.id)?.status === 'stale',
+  ).length
+  const futureCount = accounts.filter(
+    (account) => freshnessByAccount.get(account.id)?.status === 'future',
+  ).length
 
   const visibleAccounts = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
@@ -148,7 +197,7 @@ export default function AccountList({
   if (loading && accounts.length === 0) return <AccountListSkeleton />
 
   return (
-    <section className="min-w-0" aria-labelledby="accounts-title">
+    <section id="account-management" className="min-w-0 scroll-mt-24" aria-labelledby="accounts-title">
       <div className="mb-5 rounded-[1.25rem] border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -178,25 +227,85 @@ export default function AccountList({
                 历史台账
               </ViewButton>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowBatchModal(true)}
-              disabled={accounts.length === 0}
-              className="flex min-h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
-            >
-              <Calendar className="h-4 w-4" aria-hidden="true" />
-              更新余额
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAddModal(true)}
-              className="flex min-h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              添加账户
-            </button>
+            {accounts.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setBatchMode('all')}
+                  className="flex min-h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-blue-200 hover:text-blue-700"
+                >
+                  <Calendar className="h-4 w-4" aria-hidden="true" />
+                  更新余额
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(true)}
+                  className="flex min-h-10 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  添加账户
+                </button>
+              </>
+            )}
           </div>
         </div>
+
+        {viewMode === 'accounts' && accounts.length > 0 && (
+          <div
+            id="account-review"
+            className={`mt-5 flex scroll-mt-24 flex-col gap-3 rounded-2xl border px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between ${
+              attentionAccountIds.size > 0
+                ? 'border-amber-200 bg-amber-50/80'
+                : 'border-emerald-200 bg-emerald-50/70'
+            }`}
+          >
+            <div className="flex min-w-0 items-start gap-2.5">
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white ${attentionAccountIds.size > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                {attentionAccountIds.size > 0
+                  ? <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                  : <Check className="h-4 w-4" aria-hidden="true" />}
+              </span>
+              <div className="min-w-0">
+                <p className={`text-sm font-semibold ${attentionAccountIds.size > 0 ? 'text-amber-950' : 'text-emerald-950'}`}>
+                  {attentionAccountIds.size > 0
+                    ? `${attentionAccountIds.size} 个账户需要确认余额`
+                    : '所有账户近期都有余额记录'}
+                </p>
+                <p className={`mt-0.5 text-xs leading-5 ${attentionAccountIds.size > 0 ? 'text-amber-800' : 'text-emerald-800'}`}>
+                  {attentionAccountIds.size > 0
+                    ? [
+                        missingCount > 0 ? `${missingCount} 个尚未记录` : '',
+                        staleCount > 0 ? `${staleCount} 个已 ${DEFAULT_BALANCE_STALE_DAYS} 天未确认` : '',
+                        futureCount > 0 ? `${futureCount} 个记录日期异常` : '',
+                      ].filter(Boolean).join(' · ')
+                    : `全部账户最近 ${DEFAULT_BALANCE_STALE_DAYS} 天内都有记录；金额仍以你的核对为准`}
+                </p>
+              </div>
+            </div>
+            {attentionAccountIds.size > 0 && (
+              <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                {futureCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('history')}
+                    className="flex min-h-10 cursor-pointer items-center justify-center rounded-xl border border-amber-300 bg-white px-4 text-xs font-semibold text-amber-900 transition hover:bg-amber-100"
+                  >
+                    处理日期异常
+                  </button>
+                )}
+                {updatableAccountIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setBatchMode('attention')}
+                    className="flex min-h-10 cursor-pointer items-center justify-center rounded-xl bg-amber-900 px-4 text-xs font-semibold text-white transition hover:bg-amber-950"
+                  >
+                    更新这 {updatableAccountIds.size} 个
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {viewMode === 'accounts' && accounts.length > 0 && (
           <div className="mt-5 flex min-w-0 flex-col gap-3 border-t border-slate-100 pt-4 lg:flex-row lg:items-center lg:justify-between">
@@ -299,11 +408,14 @@ export default function AccountList({
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                   {sectionAccounts.map((account) => {
                     const accountBalances = balancesByAccount.get(account.id) ?? []
+                    const displayBalances = accountBalances.filter((balance) => balance.recorded_on <= today)
                     return (
                       <AccountCard
                         key={account.id}
                         account={account}
-                        balances={accountBalances}
+                        balances={displayBalances}
+                        summary={summarizeBalances(displayBalances)}
+                        freshness={freshnessByAccount.get(account.id) ?? getBalanceFreshness(null)}
                         onRecord={() => setRecordAccount(account)}
                         onEdit={() => setEditAccount(account)}
                         onDelete={() => setPendingDelete(account)}
@@ -367,13 +479,16 @@ export default function AccountList({
             onChanged={onDataChanged}
           />
         )}
-        {showBatchModal && (
+        {batchMode && (
           <BatchRecordModal
             userId={userId}
-            accounts={accountsWithBalances}
-            onClose={() => setShowBatchModal(false)}
+            accounts={batchMode === 'attention'
+              ? accountsWithBalances.filter((account) => updatableAccountIds.has(account.id))
+              : accountsWithBalances}
+            prefillLatest={batchMode === 'attention'}
+            onClose={() => setBatchMode(null)}
             onSaved={async () => {
-              setShowBatchModal(false)
+              setBatchMode(null)
               await onDataChanged()
               showToast({ variant: 'success', title: '余额已批量更新', message: '资产概览已同步更新' })
             }}
@@ -396,6 +511,8 @@ export default function AccountList({
 function AccountCard({
   account,
   balances,
+  summary,
+  freshness,
   onRecord,
   onEdit,
   onDelete,
@@ -406,6 +523,8 @@ function AccountCard({
 }: {
   account: AccountWithBalance
   balances: Balance[]
+  summary: BalanceSummary
+  freshness: BalanceFreshness
   onRecord: () => void
   onEdit: () => void
   onDelete: () => void
@@ -414,7 +533,6 @@ function AccountCard({
   showChart: boolean
   panelClass: string
 }) {
-  const summary = summarizeBalances(balances)
   const updatedToday = summary.current?.recorded_on === localDateString()
   const change = summary.change
   const changeIsFavorable = change
@@ -423,7 +541,7 @@ function AccountCard({
   const ChangeIcon = change && change.amount < 0 ? ArrowDownRight : ArrowUpRight
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow duration-200 hover:shadow-md">
+    <article id={`account-${account.id}`} className="scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow duration-200 hover:shadow-md">
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -432,18 +550,33 @@ function AccountCard({
             </span>
             <div className="min-w-0">
               <h4 className="truncate font-semibold text-slate-900">{account.name}</h4>
-              <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+              <p className={`mt-1 flex items-center gap-1 text-xs ${freshness.status === 'fresh' ? 'text-slate-500' : 'font-medium text-amber-700'}`}>
                 {updatedToday ? (
                   <>
                     <Check className="h-3 w-3 text-emerald-600" aria-hidden="true" />
                     今日已更新
                   </>
+                ) : freshness.status === 'future' && summary.current ? (
+                  <>
+                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                    记录日期晚于今天 · 请核对
+                  </>
+                ) : freshness.status === 'stale' && summary.current ? (
+                  <>
+                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                    数据截至 {formatShortDate(summary.current.recorded_on)} · {freshness.daysSinceUpdate} 天前
+                  </>
                 ) : summary.current ? (
                   <>
                     <Clock3 className="h-3 w-3" aria-hidden="true" />
-                    {formatShortDate(summary.current.recorded_on)} 更新
+                    数据截至 {formatShortDate(summary.current.recorded_on)}
                   </>
-                ) : '等待首次记录'}
+                ) : (
+                  <>
+                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                    尚未记录余额
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -477,7 +610,7 @@ function AccountCard({
               />
             )}
           </div>
-          {change && (
+          {change && change.amount !== 0 && (
             <div className={`shrink-0 text-right ${changeIsFavorable ? 'text-emerald-700' : 'text-rose-700'}`}>
               <p className="flex items-center justify-end gap-1 text-xs font-semibold">
                 <ChangeIcon className="h-3.5 w-3.5" aria-hidden="true" />

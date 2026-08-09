@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  CheckCircle2,
   CircleGauge,
+  Minus,
   PiggyBank,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -25,18 +29,25 @@ import {
 } from 'recharts'
 import { usePrivacyMode } from '../contexts/PrivacyContext'
 import {
+  calculateAccountContributions,
   calculateChange,
+  DEFAULT_BALANCE_STALE_DAYS,
   filterSnapshotsByDays,
+  filterSnapshotsFromDate,
   formatCompactMoney,
   formatMoney,
   formatSignedMoney,
+  getBalanceFreshness,
+  localDateString,
+  summarizeBalances,
   type DailySnapshot,
 } from '../lib/domain'
-import type { Account } from '../lib/types'
+import type { Account, Balance } from '../lib/types'
 import Money from './ui/Money'
 
 interface Props {
   accounts: Account[]
+  balancesByAccount: ReadonlyMap<string, Balance[]>
   snapshots: DailySnapshot[]
   loading: boolean
 }
@@ -49,28 +60,62 @@ interface ChartPoint {
 }
 
 type ChartMode = 'networth' | 'balance'
-type RangeKey = '30d' | '90d' | 'all'
+type RangeKey = '30d' | '90d' | 'ytd' | 'all'
 
-const rangeOptions: { value: RangeKey; label: string; days: number | null }[] = [
-  { value: '30d', label: '1月', days: 30 },
-  { value: '90d', label: '3月', days: 90 },
-  { value: 'all', label: '全部', days: null },
+const rangeOptions: { value: RangeKey; label: string }[] = [
+  { value: '30d', label: '1月' },
+  { value: '90d', label: '3月' },
+  { value: 'ytd', label: '今年' },
+  { value: 'all', label: '全部' },
 ]
+const axisDateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  month: 'numeric',
+  day: 'numeric',
+})
+const chartDateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+})
 
-export default function Dashboard({ accounts, snapshots, loading }: Props) {
+export default function Dashboard({ accounts, balancesByAccount, snapshots, loading }: Props) {
   const [range, setRange] = useState<RangeKey>('90d')
-  const rangeDays = rangeOptions.find((option) => option.value === range)?.days ?? null
-  const visibleSnapshots = useMemo(
-    () => filterSnapshotsByDays(snapshots, rangeDays),
-    [rangeDays, snapshots],
+  const today = localDateString()
+  const currentSnapshots = useMemo(
+    () => snapshots.filter((snapshot) => snapshot.date <= today),
+    [snapshots, today],
   )
-  const latest = snapshots.at(-1)
+  const visibleSnapshots = useMemo(
+    () => {
+      if (range === 'ytd') {
+        return filterSnapshotsFromDate(currentSnapshots, `${today.slice(0, 4)}-01-01`)
+      }
+      return filterSnapshotsByDays(
+        currentSnapshots,
+        range === '30d' ? 30 : range === '90d' ? 90 : null,
+        today,
+      )
+    },
+    [currentSnapshots, range, today],
+  )
+  const latest = currentSnapshots.at(-1)
   const periodStart = visibleSnapshots.at(0)
   const periodChange = latest && periodStart && latest.date !== periodStart.date
     ? calculateChange(latest.netWorth, periodStart.netWorth)
     : null
 
-  if (loading && snapshots.length === 0) return <DashboardSkeleton />
+  if (loading && currentSnapshots.length === 0) return <DashboardSkeleton />
+  if (accounts.length === 0) return null
+  if (currentSnapshots.length === 0) {
+    return (
+      <GettingStartedState
+        title="账户已就绪，补上当前余额"
+        description={`你已经添加 ${accounts.length} 个账户。集中记录一次当前余额，就能生成第一份净资产概览。`}
+      />
+    )
+  }
 
   const overview = latest ?? {
     totalAssets: 0,
@@ -125,7 +170,9 @@ export default function Dashboard({ accounts, snapshots, loading }: Props) {
           </h2>
         </div>
         <p className="hidden text-sm text-slate-500 sm:block">
-          {latest ? `数据更新至 ${formatSnapshotDate(latest.date)}` : '等待第一笔余额记录'}
+          {latest
+            ? `最近记录日 ${formatSnapshotDate(latest.date)} · 当日确认 ${latest.records.size}/${accounts.length}`
+            : '等待第一笔余额记录'}
         </p>
       </div>
 
@@ -157,7 +204,10 @@ export default function Dashboard({ accounts, snapshots, loading }: Props) {
                 {accounts.length} 个账户
               </span>
               <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
-                {snapshots.length} 个记录日
+                最近记录日实际填写 {latest?.records.size ?? 0}/{accounts.length}
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1">
+                {currentSnapshots.length} 个记录日
               </span>
             </div>
           </div>
@@ -187,6 +237,13 @@ export default function Dashboard({ accounts, snapshots, loading }: Props) {
         </div>
       </div>
 
+      <InsightBar
+        accounts={accounts}
+        balancesByAccount={balancesByAccount}
+        data={visibleSnapshots}
+        range={range}
+      />
+
       <div className="mb-6 grid min-w-0 gap-4 xl:grid-cols-12">
         <OverviewTrends
           data={visibleSnapshots}
@@ -208,10 +265,22 @@ function PeriodChange({
   range: RangeKey
 }) {
   const { amountsHidden } = usePrivacyMode()
-  const label = range === '30d' ? '近 1 月' : range === '90d' ? '近 3 月' : '全部记录'
+  const label = getRangeLabel(range)
 
   if (!change) {
     return <p className="mt-3 text-sm text-blue-100/80">再记录一次即可比较变化</p>
+  }
+
+  if (change.amount === 0) {
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 font-semibold text-blue-100">
+          <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+          {amountsHidden ? '金额已隐藏' : formatSignedMoney(0)}
+        </span>
+        <span className="text-blue-100/75">{label} · 持平</span>
+      </div>
+    )
   }
 
   const rising = change.amount >= 0
@@ -229,6 +298,94 @@ function PeriodChange({
       </span>
       <span className="text-blue-100/75">{label}</span>
     </div>
+  )
+}
+
+function InsightBar({
+  accounts,
+  balancesByAccount,
+  data,
+  range,
+}: {
+  accounts: Account[]
+  balancesByAccount: ReadonlyMap<string, Balance[]>
+  data: DailySnapshot[]
+  range: RangeKey
+}) {
+  if (accounts.length === 0) return null
+
+  const start = data.at(0)
+  const end = data.at(-1)
+  const change = start && end && start.date !== end.date
+    ? calculateChange(end.netWorth, start.netWorth)
+    : null
+  const contributions = calculateAccountContributions(accounts, start, end)
+  const primaryContribution = contributions.at(0)
+  const newlyCoveredCount = contributions.filter((contribution) => contribution.isNewInPeriod).length
+  const primaryAccount = primaryContribution
+    ? accounts.find((account) => account.id === primaryContribution.accountId)
+    : undefined
+  const freshCount = accounts.filter((account) => {
+    const current = summarizeBalances(balancesByAccount.get(account.id) ?? []).current
+    return getBalanceFreshness(current?.recorded_on ?? null).status === 'fresh'
+  }).length
+  const attentionCount = accounts.length - freshCount
+  const HealthIcon = attentionCount > 0 ? AlertTriangle : CheckCircle2
+
+  return (
+    <aside className="mb-4 flex flex-col gap-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between" aria-label="资产洞察摘要">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm">
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-wide text-blue-700">本期洞察</p>
+          <p className="mt-1 text-sm leading-6 text-slate-700">
+            {change ? (
+              <>
+                {change.amount === 0 ? (
+                  <>{getRangeLabel(range)}净资产记录值保持不变</>
+                ) : (
+                  <>
+                    {getRangeLabel(range)}净资产记录值{change.amount > 0 ? '增加' : '减少'}{' '}
+                    <Money value={Math.abs(change.amount)} className="font-semibold text-slate-900" />
+                  </>
+                )}
+                {primaryContribution && primaryAccount && (
+                  <>
+                    ；绝对变化最大的是{' '}
+                    <a href={`#account-${primaryAccount.id}`} className="font-semibold text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-800">
+                      {primaryAccount.name}
+                    </a>{' '}
+                    （<Money value={primaryContribution.amount} signed className="font-semibold" />
+                    {primaryContribution.isNewInPeriod ? '，本期新增记录' : ''}）
+                  </>
+                )}
+                {newlyCoveredCount > 0 && (
+                  <>；含 {newlyCoveredCount} 个首次纳入账户，属于数据覆盖变化，不能直接视为收益</>
+                )}
+                。
+              </>
+            ) : (
+              data.length === 0
+                ? <>所选时间范围内没有记录；可切换“全部”查看更早的历史。</>
+                : <>所选范围至少需要两个不同记录日，才能解释净资产变化来源。</>
+            )}
+          </p>
+        </div>
+      </div>
+
+      <a
+        href="#account-review"
+        className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl border bg-white px-3 py-2.5 text-sm transition hover:-translate-y-0.5 hover:shadow-sm ${attentionCount > 0 ? 'border-amber-200 text-amber-800' : 'border-emerald-200 text-emerald-800'}`}
+      >
+        <HealthIcon className="h-4 w-4" aria-hidden="true" />
+        <span>
+          近期覆盖：<strong className="font-semibold">{freshCount}/{accounts.length}</strong> 个账户在 {DEFAULT_BALANCE_STALE_DAYS} 天内有记录
+          {attentionCount > 0 && <span className="font-semibold"> · {attentionCount} 个待确认</span>}
+        </span>
+      </a>
+    </aside>
   )
 }
 
@@ -260,10 +417,18 @@ function OverviewTrends({
   const dataMin = values.length ? Math.min(...values) : 0
   const dataMax = values.length ? Math.max(...values) : 0
   const padding = (dataMax - dataMin || Math.max(Math.abs(dataMax), 1)) * 0.14
-  const yDomain: [number, number] = [Math.min(0, dataMin - padding), dataMax + padding]
+  const yDomain: [number, number] = chartMode === 'networth'
+    ? [dataMin - padding, dataMax + padding]
+    : [Math.min(0, dataMin - padding), dataMax + padding]
+  const curveType = chartData.length <= 3 ? 'linear' : 'monotone'
   const chartDescription = change
-    ? `所选期间净资产${change.amount >= 0 ? '增加' : '减少'}${formatMoney(Math.abs(change.amount))}元`
+    ? change.amount === 0
+      ? '所选期间净资产保持不变'
+      : `所选期间净资产${change.amount > 0 ? '增加' : '减少'}${formatMoney(Math.abs(change.amount))}元`
     : '当前记录不足，暂时无法比较趋势'
+  const observationLabel = start && end
+    ? `${formatSnapshotRange(start.date, end.date)} · ${chartData.length} 个记录日`
+    : '等待记录数据'
 
   return (
     <article className={`min-w-0 rounded-[1.25rem] border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-6 ${className ?? ''}`}>
@@ -274,6 +439,7 @@ function OverviewTrends({
             <p className="mt-1 text-sm text-slate-500">
               {amountsHidden ? '金额已隐藏，趋势形态仍然可见' : chartDescription}
             </p>
+            <p className="mt-1 text-xs text-slate-400">{observationLabel}</p>
           </div>
           <SegmentedControl
             label="图表指标"
@@ -297,8 +463,12 @@ function OverviewTrends({
       {chartData.length < 2 ? (
         <div className="flex h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 text-center">
           <TrendingUp className="mb-3 h-7 w-7 text-slate-300" aria-hidden="true" />
-          <p className="text-sm font-medium text-slate-600">再记录一次即可形成趋势</p>
-          <p className="mt-1 text-xs text-slate-500">每次更新都会沉淀为一条历史轨迹</p>
+          <p className="text-sm font-medium text-slate-600">
+            {chartData.length === 0 ? '所选范围暂无记录' : '再记录一次即可形成趋势'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {chartData.length === 0 ? '切换到更长时间范围，或记录今天的余额' : '每次更新都会沉淀为一条历史轨迹'}
+          </p>
         </div>
       ) : (
         <div
@@ -345,7 +515,7 @@ function OverviewTrends({
               {chartMode === 'networth' ? (
                 <>
                   <Area
-                    type="monotone"
+                    type={curveType}
                     dataKey="净资产"
                     fill="url(#net-worth-fill)"
                     stroke="none"
@@ -354,11 +524,11 @@ function OverviewTrends({
                     isAnimationActive={false}
                   />
                   <Line
-                    type="monotone"
+                    type={curveType}
                     dataKey="净资产"
                     stroke="#2563eb"
                     strokeWidth={3}
-                    dot={false}
+                    dot={chartData.length <= 12 ? { r: 3, fill: '#fff', stroke: '#2563eb', strokeWidth: 2 } : false}
                     activeDot={{ r: 5, fill: '#2563eb', stroke: '#fff', strokeWidth: 3 }}
                     isAnimationActive={false}
                   />
@@ -367,7 +537,7 @@ function OverviewTrends({
                 <>
                   <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
                   <Line
-                    type="monotone"
+                    type={curveType}
                     dataKey="总资产"
                     stroke="#059669"
                     strokeWidth={2.5}
@@ -376,7 +546,7 @@ function OverviewTrends({
                     isAnimationActive={false}
                   />
                   <Line
-                    type="monotone"
+                    type={curveType}
                     dataKey="负债"
                     stroke="#e11d48"
                     strokeWidth={2.5}
@@ -407,18 +577,18 @@ function StructureCard({
   const investments = snapshot?.totalInvestments ?? 0
   const liabilities = snapshot?.totalLiabilities ?? 0
   const holdings = assets + investments
-  const debtRatio = holdings > 0 ? (liabilities / holdings) * 100 : 0
+  const debtRatio = holdings > 0 ? (liabilities / holdings) * 100 : null
   const allocation = [
     { name: '灵活取用', value: assets, color: '#059669' },
     { name: '投资资产', value: investments, color: '#d97706' },
   ].filter((item) => item.value > 0)
-  const debtStatus = debtRatio === 0
+  const debtStatus = liabilities === 0
     ? { label: '当前无负债', tone: 'text-emerald-700', bar: 'bg-emerald-500' }
-    : debtRatio <= 30
-      ? { label: '负债比例较低', tone: 'text-emerald-700', bar: 'bg-emerald-500' }
-      : debtRatio <= 60
-        ? { label: '关注偿债节奏', tone: 'text-amber-700', bar: 'bg-amber-500' }
-        : { label: '负债比例偏高', tone: 'text-rose-700', bar: 'bg-rose-500' }
+    : debtRatio !== null && debtRatio <= 100
+      ? { label: '资产目前可覆盖负债', tone: 'text-blue-700', bar: 'bg-blue-500' }
+      : debtRatio === null
+        ? { label: '暂无资产覆盖负债', tone: 'text-rose-700', bar: 'bg-rose-500' }
+        : { label: '负债已高于资产', tone: 'text-rose-700', bar: 'bg-rose-500' }
 
   return (
     <article className={`min-w-0 rounded-[1.25rem] border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-6 ${className ?? ''}`}>
@@ -482,17 +652,20 @@ function StructureCard({
             <p className="text-xs font-medium text-slate-500">负债 / 资产</p>
             <p className={`mt-1 text-sm font-semibold ${debtStatus.tone}`}>{debtStatus.label}</p>
           </div>
-          <span className="text-lg font-bold tabular-nums text-slate-800">{debtRatio.toFixed(1)}%</span>
+          <span className="text-lg font-bold tabular-nums text-slate-800">
+            {debtRatio === null ? '—' : `${debtRatio.toFixed(1)}%`}
+          </span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
           <div
             className={`h-full rounded-full transition-[width] duration-300 ${debtStatus.bar}`}
-            style={{ width: `${Math.min(debtRatio, 100)}%` }}
+            style={{ width: `${debtRatio === null ? (liabilities > 0 ? 100 : 0) : Math.min(debtRatio, 100)}%` }}
           />
         </div>
         <p className="mt-3 text-xs text-slate-500">
           资产合计 <Money value={holdings} className="font-semibold text-slate-700" />
         </p>
+        <p className="mt-1 text-[11px] leading-5 text-slate-400">仅反映账面结构，不代表现金流或实际偿债能力。</p>
       </div>
     </article>
   )
@@ -555,22 +728,54 @@ function DashboardSkeleton() {
   )
 }
 
+function GettingStartedState({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <section aria-labelledby="overview-title" className="overflow-hidden rounded-[1.5rem] border border-blue-100 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_55%,#eef2ff_100%)] px-5 py-8 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:px-8 sm:py-10">
+      <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200">
+          <PiggyBank className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <p className="mt-5 text-sm font-semibold text-blue-600">开始建立资产轨迹</p>
+        <h2 id="overview-title" className="mt-1 text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">{title}</h2>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">{description}</p>
+      </div>
+    </section>
+  )
+}
+
 function formatAxisDate(timestamp: number): string {
-  const date = new Date(timestamp)
-  return `${date.getMonth() + 1}/${date.getDate()}`
+  return axisDateFormatter.format(new Date(timestamp))
 }
 
 function formatChartDate(label: unknown): string {
-  return new Date(Number(label)).toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
+  return chartDateFormatter.format(new Date(Number(label)))
 }
 
 function formatSnapshotDate(date: string): string {
   const [year, month, day] = date.split('-')
   return `${year}年${Number(month)}月${Number(day)}日`
+}
+
+function formatSnapshotRange(startDate: string, endDate: string): string {
+  const [startYear, startMonth, startDay] = startDate.split('-')
+  const [endYear, endMonth, endDay] = endDate.split('-')
+  if (startYear === endYear) {
+    return `${startYear}年${Number(startMonth)}月${Number(startDay)}日 – ${Number(endMonth)}月${Number(endDay)}日`
+  }
+  return `${formatSnapshotDate(startDate)} – ${formatSnapshotDate(endDate)}`
+}
+
+function getRangeLabel(range: RangeKey): string {
+  if (range === '30d') return '近 1 个月'
+  if (range === '90d') return '近 3 个月'
+  if (range === 'ytd') return '今年'
+  return '全部记录'
 }
 
 const tooltipStyle = {

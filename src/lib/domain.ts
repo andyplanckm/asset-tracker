@@ -23,16 +23,39 @@ export interface BalanceSummary {
   change: ValueChange | null
 }
 
+export type BalanceFreshnessStatus = 'fresh' | 'stale' | 'missing' | 'future'
+
+export interface BalanceFreshness {
+  status: BalanceFreshnessStatus
+  daysSinceUpdate: number | null
+  recordedOn: string | null
+}
+
+export interface AccountContribution {
+  accountId: string
+  amount: number
+  isNewInPeriod: boolean
+}
+
+export const DEFAULT_BALANCE_STALE_DAYS = 30
+const SHANGHAI_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
 export function localDateString(date = new Date()): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
+  const parts = new Map(SHANGHAI_DATE_FORMATTER.formatToParts(date).map((part) => [part.type, part.value]))
+  const year = parts.get('year')
+  const month = parts.get('month')
+  const day = parts.get('day')
   return `${year}-${month}-${day}`
 }
 
 export function localNoonTimestamp(dateStr: string): number {
   const [year, month, day] = dateStr.split('-').map(Number)
-  return new Date(year, month - 1, day, 12, 0, 0).getTime()
+  return Date.UTC(year, month - 1, day, 4, 0, 0)
 }
 
 export function formatMoney(value: number): string {
@@ -60,11 +83,64 @@ export function calculateChange(current: number, previous: number): ValueChange 
   }
 }
 
-export function filterSnapshotsByDays(snapshots: DailySnapshot[], days: number | null): DailySnapshot[] {
+export function filterSnapshotsByDays(
+  snapshots: DailySnapshot[],
+  days: number | null,
+  asOfDate = localDateString(),
+): DailySnapshot[] {
   if (days === null || snapshots.length === 0) return snapshots
-  const latestTimestamp = snapshots.at(-1)?.timestamp ?? 0
-  const cutoff = latestTimestamp - (days - 1) * 24 * 60 * 60 * 1_000
-  return snapshots.filter((snapshot) => snapshot.timestamp >= cutoff)
+  const asOfTimestamp = localNoonTimestamp(asOfDate)
+  const cutoff = asOfTimestamp - (days - 1) * 24 * 60 * 60 * 1_000
+  return snapshots.filter((snapshot) => (
+    snapshot.timestamp >= cutoff && snapshot.timestamp <= asOfTimestamp
+  ))
+}
+
+export function filterSnapshotsFromDate(snapshots: DailySnapshot[], startDate: string): DailySnapshot[] {
+  return snapshots.filter((snapshot) => snapshot.date >= startDate)
+}
+
+export function getBalanceFreshness(
+  recordedOn: string | null,
+  asOfDate = localDateString(),
+  staleAfterDays = DEFAULT_BALANCE_STALE_DAYS,
+): BalanceFreshness {
+  if (!recordedOn) {
+    return { status: 'missing', daysSinceUpdate: null, recordedOn: null }
+  }
+
+  const daysSinceUpdate = calendarDayNumber(asOfDate) - calendarDayNumber(recordedOn)
+  if (daysSinceUpdate < 0) {
+    return { status: 'future', daysSinceUpdate: null, recordedOn }
+  }
+  return {
+    status: daysSinceUpdate >= staleAfterDays ? 'stale' : 'fresh',
+    daysSinceUpdate,
+    recordedOn,
+  }
+}
+
+export function calculateAccountContributions(
+  accounts: Account[],
+  start: DailySnapshot | undefined,
+  end: DailySnapshot | undefined,
+): AccountContribution[] {
+  if (!start || !end || start.date === end.date) return []
+
+  return accounts
+    .filter((account) => account.type !== 'pnl' && end.values.has(account.id))
+    .map((account) => {
+      const startValue = start.values.get(account.id)
+      const endValue = end.values.get(account.id) ?? 0
+      const rawChange = endValue - (startValue ?? 0)
+      return {
+        accountId: account.id,
+        amount: account.type === 'liability' ? -rawChange : rawChange,
+        isNewInPeriod: startValue === undefined,
+      }
+    })
+    .filter((contribution) => contribution.amount !== 0)
+    .sort((left, right) => Math.abs(right.amount) - Math.abs(left.amount))
 }
 
 export function summarizeBalances(balances: Balance[]): BalanceSummary {
@@ -89,6 +165,11 @@ export function summarizeBalances(balances: Balance[]): BalanceSummary {
 
 export function isValidAmount(type: AccountType, value: number): boolean {
   return Number.isFinite(value) && (type === 'pnl' || value >= 0)
+}
+
+function calendarDayNumber(date: string): number {
+  const [year, month, day] = date.split('-').map(Number)
+  return Math.floor(Date.UTC(year, month - 1, day) / (24 * 60 * 60 * 1_000))
 }
 
 /**
