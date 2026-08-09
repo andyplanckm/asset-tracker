@@ -12,6 +12,7 @@ interface AssetDataState {
 
 const BALANCE_PAGE_SIZE = 500
 const BALANCE_COLUMNS = 'id,account_id,user_id,amount,recorded_on,recorded_at,created_at'
+const BACKGROUND_REFRESH_INTERVAL_MS = 60_000
 
 function createInitialState(userId: string): AssetDataState {
   return {
@@ -53,8 +54,10 @@ async function fetchAllBalances(userId: string, isCurrentRequest: () => boolean)
 export function useAssetData(userId: string) {
   const [state, setState] = useState<AssetDataState>(() => createInitialState(userId))
   const requestId = useRef(0)
+  const lastRefreshStartedAt = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
+    lastRefreshStartedAt.current = Date.now()
     const currentRequest = ++requestId.current
     const isCurrentRequest = () => currentRequest === requestId.current
 
@@ -97,6 +100,21 @@ export function useAssetData(userId: string) {
 
     return () => {
       requestId.current += 1
+    }
+  }, [refresh])
+
+  useEffect(() => {
+    const refreshWhenReturning = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - lastRefreshStartedAt.current < BACKGROUND_REFRESH_INTERVAL_MS) return
+      void refresh()
+    }
+
+    window.addEventListener('focus', refreshWhenReturning)
+    document.addEventListener('visibilitychange', refreshWhenReturning)
+    return () => {
+      window.removeEventListener('focus', refreshWhenReturning)
+      document.removeEventListener('visibilitychange', refreshWhenReturning)
     }
   }, [refresh])
 

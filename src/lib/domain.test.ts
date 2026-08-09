@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildDailySnapshots,
+  calculateAccountContributions,
   calculateChange,
   filterSnapshotsByDays,
+  filterSnapshotsFromDate,
+  getBalanceFreshness,
   isValidAmount,
   localDateString,
   localNoonTimestamp,
@@ -29,9 +32,9 @@ function balance(id: string, accountId: string, amount: number, recordedOn: stri
 }
 
 describe('local date helpers', () => {
-  it('uses local calendar fields instead of UTC slicing', () => {
-    expect(localDateString(new Date(2026, 6, 20, 0, 30))).toBe('2026-07-20')
-    expect(new Date(localNoonTimestamp('2026-07-20')).getMonth()).toBe(6)
+  it('uses the Asia/Shanghai business date consistently', () => {
+    expect(localDateString(new Date('2026-07-19T16:30:00.000Z'))).toBe('2026-07-20')
+    expect(new Date(localNoonTimestamp('2026-07-20')).toISOString()).toBe('2026-07-20T04:00:00.000Z')
   })
 })
 
@@ -90,17 +93,55 @@ describe('financial summaries', () => {
     expect(summary.change?.amount).toBe(30)
   })
 
-  it('filters snapshots relative to the most recent recorded day', () => {
+  it('filters snapshots relative to the requested calendar day', () => {
     const snapshots = buildDailySnapshots(accounts, [
       balance('old', 'cash', 100, '2026-01-01'),
       balance('recent', 'cash', 200, '2026-07-01'),
       balance('latest', 'cash', 300, '2026-07-20'),
     ])
 
-    expect(filterSnapshotsByDays(snapshots, 30).map((snapshot) => snapshot.date)).toEqual([
+    expect(filterSnapshotsByDays(snapshots, 30, '2026-07-20').map((snapshot) => snapshot.date)).toEqual([
       '2026-07-01',
       '2026-07-20',
     ])
+    expect(filterSnapshotsByDays(snapshots, 30, '2026-08-20')).toHaveLength(0)
     expect(filterSnapshotsByDays(snapshots, null)).toHaveLength(3)
+    expect(filterSnapshotsFromDate(snapshots, '2026-07-01').map((snapshot) => snapshot.date)).toEqual([
+      '2026-07-01',
+      '2026-07-20',
+    ])
+  })
+
+  it('classifies missing, fresh, and stale balance records', () => {
+    expect(getBalanceFreshness(null, '2026-07-31')).toEqual({
+      status: 'missing',
+      daysSinceUpdate: null,
+      recordedOn: null,
+    })
+    expect(getBalanceFreshness('2026-07-20', '2026-07-31').status).toBe('fresh')
+    expect(getBalanceFreshness('2026-07-01', '2026-07-31')).toMatchObject({
+      status: 'stale',
+      daysSinceUpdate: 30,
+    })
+    expect(getBalanceFreshness('2026-08-01', '2026-07-31')).toEqual({
+      status: 'future',
+      daysSinceUpdate: null,
+      recordedOn: '2026-08-01',
+    })
+  })
+
+  it('ranks account contributions and reverses liability movement', () => {
+    const snapshots = buildDailySnapshots(accounts, [
+      balance('cash-1', 'cash', 1_000, '2026-07-01'),
+      balance('debt-1', 'debt', 500, '2026-07-01'),
+      balance('cash-2', 'cash', 1_200, '2026-07-31'),
+      balance('debt-2', 'debt', 350, '2026-07-31'),
+      balance('pnl-1', 'pnl', 999, '2026-07-31'),
+    ])
+
+    expect(calculateAccountContributions(accounts, snapshots[0], snapshots[1])).toEqual([
+      { accountId: 'cash', amount: 200, isNewInPeriod: false },
+      { accountId: 'debt', amount: 150, isNewInPeriod: false },
+    ])
   })
 })

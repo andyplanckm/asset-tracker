@@ -35,13 +35,37 @@ ALTER TABLE balances ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users can manage their own accounts"
     ON accounts FOR ALL TO authenticated
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    USING ((SELECT auth.uid()) = user_id)
+    WITH CHECK ((SELECT auth.uid()) = user_id);
 
 CREATE POLICY "Users can manage their own balances"
     ON balances FOR ALL TO authenticated
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+    USING ((SELECT auth.uid()) = user_id)
+    WITH CHECK ((SELECT auth.uid()) = user_id);
+
+CREATE OR REPLACE FUNCTION public.prevent_future_balance_dates()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF NEW.recorded_on > (now() AT TIME ZONE 'Asia/Shanghai')::date THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '23514',
+            MESSAGE = 'future_balance_date_not_allowed';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER balances_prevent_future_recorded_on
+BEFORE INSERT OR UPDATE ON public.balances
+FOR EACH ROW
+EXECUTE FUNCTION public.prevent_future_balance_dates();
+
+COMMENT ON FUNCTION public.prevent_future_balance_dates() IS
+    'Prevents balance records later than the current calendar date in Asia/Shanghai.';
 
 CREATE OR REPLACE FUNCTION public.prevent_account_type_change_with_history()
 RETURNS trigger

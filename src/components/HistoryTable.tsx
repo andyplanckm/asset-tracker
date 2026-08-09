@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Check, ChevronDown, Info, Trash2, X } from 'lucide-react'
-import { isValidAmount, type DailySnapshot } from '../lib/domain'
+import { Check, ChevronDown, Download, Info, Trash2, X } from 'lucide-react'
+import { isValidAmount, localDateString, type DailySnapshot } from '../lib/domain'
 import { errorMessage, supabase, upsertBalance } from '../lib/supabase'
 import type { Account, AccountType } from '../lib/types'
 import ConfirmDialog from './ui/ConfirmDialog'
@@ -46,6 +46,15 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
   const accountMap = useMemo(
     () => new Map(accounts.map((account) => [account.id, account])),
     [accounts],
+  )
+  const rawRecords = useMemo(
+    () => snapshots
+      .flatMap((snapshot) => [...snapshot.records.values()])
+      .sort((left, right) => {
+        const byDate = left.recorded_on.localeCompare(right.recorded_on)
+        return byDate !== 0 ? byDate : left.recorded_at.localeCompare(right.recorded_at)
+      }),
+    [snapshots],
   )
   const accountGroups = useMemo(
     () => groupDefinitions
@@ -126,6 +135,39 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
     })
   }
 
+  const handleExportCsv = () => {
+    const header = ['日期', '账户ID', '账户名', '类型', '金额', '估值时点', '首次创建时间']
+    const dataRows = rawRecords.map((record) => {
+      const account = accountMap.get(record.account_id)
+      return [
+        record.recorded_on,
+        record.account_id,
+        account?.name ?? '',
+        account?.type ?? '',
+        record.amount,
+        record.recorded_at,
+        record.created_at,
+      ]
+    })
+    const csv = `\uFEFF${[header, ...dataRows]
+      .map((row) => row.map(csvCell).join(','))
+      .join('\r\n')}`
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `asset-balance-records-${localDateString()}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+
+    showToast({
+      variant: 'success',
+      title: 'CSV 已导出',
+      message: `已导出 ${rawRecords.length} 条原始记录，文件包含完整金额。`,
+    })
+  }
+
   if (rows.length === 0) {
     return (
       <div className="rounded-[1.25rem] border border-dashed border-slate-300 bg-white/80 p-10 text-center">
@@ -147,7 +189,9 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
 
     if (isEditing) {
       return (
-        <div className={`flex items-center gap-1 ${variant === 'desktop' ? 'justify-end' : 'justify-between'}`}>
+        <div className={variant === 'desktop'
+          ? 'flex items-center justify-end gap-1'
+          : 'grid w-full grid-cols-[auto_minmax(0,1fr)_2.5rem_2.5rem] items-center gap-1'}>
           <span className="text-xs text-slate-400">¥</span>
           <input
             type="number"
@@ -161,7 +205,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
             }}
             aria-label={`${row.date} ${account.name} 的金额`}
             aria-invalid={Boolean(error)}
-            className="w-28 rounded-lg border border-blue-300 bg-white px-2 py-1.5 text-right text-sm tabular-nums focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            className={`${variant === 'desktop' ? 'w-28' : 'min-w-0 w-full'} rounded-lg border border-blue-300 bg-white px-2 py-2 text-right text-sm tabular-nums focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100`}
             autoFocus
           />
           <button
@@ -169,7 +213,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
             onClick={() => void handleEditSave()}
             disabled={saving}
             aria-label="保存"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
           >
             <Check className="h-4 w-4" />
           </button>
@@ -177,7 +221,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
             type="button"
             onClick={() => { setEditing(null); setError('') }}
             aria-label="取消"
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -190,7 +234,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
         type="button"
         onClick={() => startEdit(row.date, account.id, effectiveAmount)}
         title={isRecordedToday ? '点击编辑当日记录' : '当前沿用上次余额，点击添加当日记录'}
-        className={`min-h-8 cursor-pointer rounded-lg px-2 text-right text-sm tabular-nums transition hover:bg-slate-100 ${
+        className={`min-h-10 cursor-pointer rounded-lg px-2 text-right text-sm tabular-nums transition hover:bg-slate-100 ${
           effectiveAmount === undefined
             ? 'text-slate-400'
             : isRecordedToday
@@ -216,10 +260,23 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
               默认显示最近 {Math.min(visibleCount, rows.length)} / {rows.length} 个记录日
             </p>
           </div>
-          <p className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Info className="h-3.5 w-3.5" aria-hidden="true" />
-            “沿用”表示该日未更新，使用此前余额
-          </p>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <p className="flex items-center gap-1.5 text-xs text-slate-500">
+              <Info className="h-3.5 w-3.5" aria-hidden="true" />
+              “沿用”表示该日未更新，使用此前余额
+            </p>
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              title="导出包含完整原始金额的 CSV 文件"
+              aria-label="导出原始 CSV，文件包含完整金额"
+              className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+              导出原始 CSV
+              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">含完整金额</span>
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -248,15 +305,20 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
                 </summary>
                 <div className="border-t border-slate-100 px-4 py-3">
                   <div className="space-y-1">
-                    {accountGroups.flatMap((group) => group.accounts.map((account) => (
-                      <div key={account.id} className="flex min-h-11 items-center justify-between gap-3 border-b border-slate-50 py-1 last:border-0">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-700">{account.name}</p>
-                          <p className={`text-xs ${typeColorClass(account.type)}`}>{group.label}</p>
-                        </div>
-                        {renderAmount(row, account, 'mobile')}
-                      </div>
-                    )))}
+                    {accountGroups.flatMap((group) => group.accounts
+                      .filter((account) => row.values.has(account.id))
+                      .map((account) => {
+                        const isEditing = editing?.date === row.date && editing.accountId === account.id
+                        return (
+                          <div key={account.id} className={`flex min-h-11 gap-3 border-b border-slate-50 last:border-0 ${isEditing ? 'flex-col items-stretch py-2' : 'items-center justify-between py-1'}`}>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-slate-700">{account.name}</p>
+                              <p className={`text-xs ${typeColorClass(account.type)}`}>{group.label}</p>
+                            </div>
+                            {renderAmount(row, account, 'mobile')}
+                          </div>
+                        )
+                      }))}
                   </div>
                   <button
                     type="button"
@@ -410,4 +472,10 @@ function typeBgClass(type: AccountType): string {
 function formatDisplayDate(date: string): string {
   const [year, month, day] = date.split('-')
   return `${year}/${month}/${day}`
+}
+
+function csvCell(value: string | number): string {
+  const text = String(value)
+  const safeText = typeof value === 'string' && /^[=+\-@\t]/.test(text) ? `'${text}` : text
+  return /[",\r\n]/.test(safeText) ? `"${safeText.replace(/"/g, '""')}"` : safeText
 }

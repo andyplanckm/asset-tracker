@@ -9,6 +9,16 @@ interface Props {
 }
 
 type ScaleMode = 'adaptive' | 'zero'
+const axisDateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  month: 'numeric',
+  day: 'numeric',
+})
+const tooltipDateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  month: 'long',
+  day: 'numeric',
+})
 
 export default function TrendChart({ balances }: Props) {
   const [scaleMode, setScaleMode] = useState<ScaleMode>('adaptive')
@@ -40,7 +50,10 @@ export default function TrendChart({ balances }: Props) {
     : [Math.min(0, dataMin - padding), Math.max(0, dataMax + padding)]
 
   const change = data.at(-1)!.amount - data[0].amount
-  const chartDescription = `从${formatMoney(data[0].amount)}元变为${formatMoney(data.at(-1)!.amount)}元，变化${change >= 0 ? '增加' : '减少'}${formatMoney(Math.abs(change))}元`
+  const chartDescription = change === 0
+    ? `从${formatMoney(data[0].amount)}元到${formatMoney(data.at(-1)!.amount)}元，所选记录持平`
+    : `从${formatMoney(data[0].amount)}元变为${formatMoney(data.at(-1)!.amount)}元，${change > 0 ? '增加' : '减少'}${formatMoney(Math.abs(change))}元`
+  const curveType = data.length <= 3 ? 'linear' : 'monotone'
 
   return (
     <div className="h-56">
@@ -55,7 +68,7 @@ export default function TrendChart({ balances }: Props) {
               type="button"
               aria-pressed={scaleMode === mode}
               onClick={() => setScaleMode(mode)}
-              className={`min-h-7 cursor-pointer rounded-lg px-2 font-medium transition ${scaleMode === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`min-h-9 cursor-pointer rounded-lg px-2 font-medium transition ${scaleMode === mode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
             >
               {mode === 'adaptive' ? '自适应' : '包含零点'}
             </button>
@@ -73,7 +86,7 @@ export default function TrendChart({ balances }: Props) {
           </defs>
           <CartesianGrid vertical={false} strokeDasharray="4 5" stroke="#e2e8f0" strokeOpacity={0.8} />
           <XAxis dataKey="_ts" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11, fill: '#64748b' }} tickLine={false} axisLine={false}
-            tickFormatter={(timestamp: number) => { const date = new Date(timestamp); return `${date.getMonth() + 1}/${date.getDate()}` }} />
+            tickFormatter={(timestamp: number) => axisDateFormatter.format(new Date(timestamp))} />
           <YAxis
             domain={yDomain}
             tick={{ fontSize: 11, fill: '#64748b' }}
@@ -84,11 +97,11 @@ export default function TrendChart({ balances }: Props) {
           />
           <Tooltip
             formatter={(value) => [amountsHidden ? '金额已隐藏' : `¥${formatMoney(Number(value))}`, '余额']}
-            labelFormatter={(label) => new Date(Number(label)).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+            labelFormatter={(label) => tooltipDateFormatter.format(new Date(Number(label)))}
             contentStyle={{ border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 10px 24px rgba(15, 23, 42, 0.1)', fontSize: 12 }}
           />
           <Area
-            type="monotone"
+            type={curveType}
             dataKey="amount"
             fill={`url(#${gradientId})`}
             stroke="none"
@@ -96,7 +109,7 @@ export default function TrendChart({ balances }: Props) {
             tooltipType="none"
             isAnimationActive={false}
           />
-          <Line type="monotone" dataKey="amount" stroke="#3b82f6" strokeWidth={2.5}
+          <Line type={curveType} dataKey="amount" stroke="#3b82f6" strokeWidth={2.5}
             dot={{ r: 3, fill: '#fff', stroke: '#3b82f6', strokeWidth: 2 }}
             activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
             isAnimationActive={false} />
