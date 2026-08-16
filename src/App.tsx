@@ -6,6 +6,9 @@ import ResetPassword from './components/ResetPassword'
 import { errorMessage, supabase } from './lib/supabase'
 
 const AuthenticatedApp = lazy(() => import('./components/AuthenticatedApp'))
+const SESSION_INITIALIZATION_TIMEOUT_MS = 15_000
+const SESSION_INITIALIZATION_TIMEOUT_MESSAGE =
+  '连接登录服务超时，请检查网络或在 Supabase 控制台恢复项目后重试'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -16,10 +19,31 @@ export default function App() {
 
   useEffect(() => {
     let isActive = true
+    let initializationComplete = false
+
+    const settleInitialSession = (nextSession: Session | null, nextError = '') => {
+      if (!isActive || initializationComplete) return
+
+      initializationComplete = true
+      window.clearTimeout(initializationTimer)
+      setSession(nextSession)
+      setInitializationError(nextError)
+      setLoading(false)
+    }
+
+    const initializationTimer = window.setTimeout(() => {
+      settleInitialSession(null, SESSION_INITIALIZATION_TIMEOUT_MESSAGE)
+    }, SESSION_INITIALIZATION_TIMEOUT_MS)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isActive || event === 'INITIAL_SESSION') return
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+
+      if (!initializationComplete) {
+        settleInitialSession(session)
+        return
+      }
+
       setSession(session)
       setInitializationError('')
       setLoading(false)
@@ -29,16 +53,10 @@ export default function App() {
       try {
         const { data, error } = await supabase.auth.getSession()
         if (error) throw error
-        if (!isActive) return
 
-        setSession(data.session)
-        setLoading(false)
+        settleInitialSession(data.session)
       } catch (error) {
-        if (!isActive) return
-
-        setSession(null)
-        setLoading(false)
-        setInitializationError(errorMessage(error, '登录状态加载失败，请检查网络后重试'))
+        settleInitialSession(null, errorMessage(error, '登录状态加载失败，请检查网络后重试'))
       }
     }
 
@@ -46,6 +64,7 @@ export default function App() {
 
     return () => {
       isActive = false
+      window.clearTimeout(initializationTimer)
       subscription.unsubscribe()
     }
   }, [initializationAttempt])
