@@ -135,20 +135,20 @@ export default function Dashboard({ accounts, balancesByAccount, snapshots, load
       bg: 'bg-emerald-50',
     },
     {
-      label: '投资资产',
-      hint: '长期与市场投资',
-      value: overview.totalInvestments,
-      icon: TrendingUp,
-      color: 'text-amber-700',
-      bg: 'bg-amber-50',
-    },
-    {
       label: '总负债',
       hint: '当前待偿还金额',
       value: overview.totalLiabilities,
       icon: TrendingDown,
       color: 'text-rose-700',
       bg: 'bg-rose-50',
+    },
+    {
+      label: '投资资产',
+      hint: '长期与市场投资',
+      value: overview.totalInvestments,
+      icon: TrendingUp,
+      color: 'text-amber-700',
+      bg: 'bg-amber-50',
     },
     {
       label: '投资盈亏',

@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Calendar,
   Check,
+  ChevronDown,
   CircleDollarSign,
   Clock3,
   Edit3,
@@ -72,18 +73,18 @@ const sectionDefinitions: {
     panel: 'bg-emerald-50 text-emerald-700',
   },
   {
-    type: 'investment',
-    label: '投资资产',
-    color: 'text-amber-700',
-    dot: 'bg-amber-500',
-    panel: 'bg-amber-50 text-amber-700',
-  },
-  {
     type: 'liability',
     label: '负债账户',
     color: 'text-rose-700',
     dot: 'bg-rose-500',
     panel: 'bg-rose-50 text-rose-700',
+  },
+  {
+    type: 'investment',
+    label: '投资资产',
+    color: 'text-amber-700',
+    dot: 'bg-amber-500',
+    panel: 'bg-amber-50 text-amber-700',
   },
   {
     type: 'pnl',
@@ -107,6 +108,17 @@ export default function AccountList({
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<AccountStatusFilter>('all')
   const [sort, setSort] = useState<AccountSort>('amount-desc')
+  const collapseStorageKey = `asset-tracker-collapsed-groups:${userId}`
+  const [collapsedSections, setCollapsedSections] = useState<Set<AccountType>>(() => {
+    const defaults = () => new Set<AccountType>(['investment', 'pnl'])
+    try {
+      const saved = localStorage.getItem(collapseStorageKey)
+      if (saved === null) return defaults()
+      const parsed: unknown = JSON.parse(saved)
+      if (!Array.isArray(parsed) || parsed.some((type) => !sectionDefinitions.some((section) => section.type === type))) return defaults()
+      return new Set(parsed as AccountType[])
+    } catch { return defaults() }
+  })
   const [density, setDensity] = useState<Density>(() => {
     try { return localStorage.getItem('asset-tracker-account-density') === 'compact' ? 'compact' : 'cards' }
     catch { return 'cards' }
@@ -124,6 +136,11 @@ export default function AccountList({
     try { localStorage.setItem('asset-tracker-account-density', density) }
     catch { /* 浏览器禁用存储时，布局偏好仍在本页有效。 */ }
   }, [density])
+
+  useEffect(() => {
+    try { localStorage.setItem(collapseStorageKey, JSON.stringify([...collapsedSections])) }
+    catch { /* 禁用本地存储时仍可在当前页面展开和收起。 */ }
+  }, [collapseStorageKey, collapsedSections])
 
   const today = localDateString()
   const latestValues = [...snapshots].reverse().find((snapshot) => snapshot.date <= today)?.values
@@ -436,10 +453,32 @@ export default function AccountList({
               .filter((account) => account.type === section.type)
             if (sectionAccounts.length === 0) return null
             const sectionTotal = sectionAccounts.reduce((sum, account) => sum + (account.latest_balance ?? 0), 0)
+            // 筛选时临时展示所有命中账户，不改写平时的收起偏好。
+            const isCollapsed = !hasFilters && collapsedSections.has(section.type)
 
             return (
-              <section key={section.type} className="mb-7" aria-labelledby={`section-${section.type}`}>
-                <div className="mb-3 flex items-center justify-between gap-4 px-1">
+              <details
+                key={section.type}
+                open={!isCollapsed}
+                onToggle={(event) => {
+                  if (hasFilters) return
+                  const open = event.currentTarget.open
+                  setCollapsedSections((previous) => {
+                    if (previous.has(section.type) === !open) return previous
+                    const next = new Set(previous)
+                    if (open) next.delete(section.type)
+                    else next.add(section.type)
+                    return next
+                  })
+                }}
+                className="group mb-4 min-w-0 rounded-2xl border border-slate-200/80 bg-white/60 px-3 sm:px-4"
+                aria-labelledby={`section-${section.type}`}
+              >
+                <summary
+                  onClick={(event) => { if (hasFilters) event.preventDefault() }}
+                  className={`flex min-h-16 list-none flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl py-3 [&::-webkit-details-marker]:hidden ${hasFilters ? 'cursor-default' : 'cursor-pointer'}`}
+                  aria-controls={`account-group-${section.type}`}
+                >
                   <div className="flex items-center gap-2">
                     <span className={`h-2.5 w-2.5 rounded-full ${section.dot}`} aria-hidden="true" />
                     <h3 id={`section-${section.type}`} className={`text-sm font-semibold ${section.color}`}>
@@ -449,12 +488,18 @@ export default function AccountList({
                       {sectionAccounts.length}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    小计 <Money value={sectionTotal} className="ml-1 font-semibold text-slate-700" />
-                  </p>
-                </div>
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                    <p className="text-xs text-slate-500">
+                      小计 <Money value={sectionTotal} className="ml-1 font-semibold text-slate-700" />
+                    </p>
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500">
+                      {hasFilters ? '筛选结果' : isCollapsed ? '展开' : '收起'}
+                      {!hasFilters && <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} aria-hidden="true" />}
+                    </span>
+                  </div>
+                </summary>
 
-                <div className={`grid grid-cols-1 gap-3 ${density === 'cards' ? 'lg:grid-cols-2' : ''}`}>
+                <div id={`account-group-${section.type}`} className={`grid grid-cols-1 gap-3 pb-4 ${density === 'cards' ? 'lg:grid-cols-2' : ''}`}>
                   {sectionAccounts.map((account) => {
                     const displayBalances = displayBalancesByAccount.get(account.id) ?? []
                     return (
@@ -469,14 +514,14 @@ export default function AccountList({
                         onDelete={() => setPendingDelete(account)}
                         onHistory={() => setHistoryAccount(account)}
                         onToggleChart={() => toggleChart(account.id)}
-                        showChart={expandedCharts.has(account.id)}
+                        showChart={!isCollapsed && expandedCharts.has(account.id)}
                         panelClass={section.panel}
                         compact={density === 'compact'}
                       />
                     )
                   })}
                 </div>
-              </section>
+              </details>
             )
           })
         )

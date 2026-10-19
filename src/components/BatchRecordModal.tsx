@@ -23,8 +23,8 @@ const sections: {
   color: string
 }[] = [
   { type: 'asset', label: '灵活取用', color: 'bg-emerald-50 text-emerald-700' },
-  { type: 'investment', label: '投资资产', color: 'bg-amber-50 text-amber-700' },
   { type: 'liability', label: '负债账户', color: 'bg-rose-50 text-rose-700' },
+  { type: 'investment', label: '投资资产', color: 'bg-amber-50 text-amber-700' },
   { type: 'pnl', label: '投资盈亏', color: 'bg-violet-50 text-violet-700' },
 ]
 
