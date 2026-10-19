@@ -605,8 +605,8 @@ function AccountCard({
               </p>
             </div>
           </div>
-          <div className="flex items-center justify-between gap-4 sm:block sm:text-right">
-            {account.latest_balance === null ? <span className="text-lg text-slate-400">—</span> : <Money value={account.latest_balance} className="text-lg font-bold text-slate-900" />}
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 sm:block sm:text-right">
+            {account.latest_balance === null ? <span className="text-lg text-slate-400">—</span> : <Money value={account.latest_balance} className="inline-block max-w-full overflow-hidden text-ellipsis align-bottom text-lg font-bold text-slate-900" />}
             {change && change.amount !== 0 && <p className={`text-xs ${changeIsFavorable ? 'text-emerald-700' : 'text-rose-700'}`}><Money value={change.amount} signed /> <span className="text-slate-500">较上次</span></p>}
           </div>
           <div className="flex items-center gap-1 border-t border-slate-100 pt-2 sm:border-0 sm:pt-0">
@@ -741,7 +741,10 @@ function AccountMenu({ accountName, onHistory, onEdit, onDelete }: {
       </summary>
       <div className="absolute right-0 z-30 mt-1 w-36 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-xl shadow-slate-200/60" onClick={(event) => {
         const details = event.currentTarget.closest('details')
-        if (details) details.open = false
+        if (details) {
+          details.open = false
+          details.querySelector('summary')?.focus()
+        }
       }}>
         <MenuButton icon={<History />} onClick={onHistory}>历史记录</MenuButton>
         <MenuButton icon={<Edit3 />} onClick={onEdit}>编辑账户</MenuButton>
