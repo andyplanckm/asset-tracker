@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react'
 import AccountList from '../components/AccountList'
+import SyncStatus from '../components/SyncStatus'
 import { useAssetData } from '../hooks/useAssetData'
 import { buildDailySnapshots } from '../lib/domain'
 import type { Balance } from '../lib/types'
@@ -7,7 +8,7 @@ import type { Balance } from '../lib/types'
 const Dashboard = lazy(() => import('../components/Dashboard'))
 
 export default function Home({ userId }: { userId: string }) {
-  const { accounts, balances, loading, error, refresh } = useAssetData(userId)
+  const { accounts, balances, loading, refreshing, lastSyncedAt, error, refresh } = useAssetData(userId)
   const snapshots = useMemo(() => buildDailySnapshots(accounts, balances), [accounts, balances])
   const balancesByAccount = useMemo(() => {
     const grouped = new Map<string, Balance[]>()
@@ -38,6 +39,7 @@ export default function Home({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-6">
+      <SyncStatus lastSyncedAt={lastSyncedAt} refreshing={loading || refreshing} error={error} onRefresh={refresh} />
       {error && (
         <div role="alert" className="rounded-xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700 shadow-sm">
           {error}

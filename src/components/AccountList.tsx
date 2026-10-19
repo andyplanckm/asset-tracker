@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -10,6 +10,7 @@ import {
   Edit3,
   History,
   LayoutGrid,
+  List,
   MoreHorizontal,
   Plus,
   Search,
@@ -18,6 +19,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react'
+import { selectAccounts, type AccountSort, type AccountStatusFilter } from '../lib/accountFilters'
 import {
   DEFAULT_BALANCE_STALE_DAYS,
   getBalanceFreshness,
@@ -53,6 +55,7 @@ interface Props {
 type ViewMode = 'accounts' | 'history'
 type FilterType = 'all' | AccountType
 type BatchMode = 'all' | 'attention' | null
+type Density = 'cards' | 'compact'
 
 const sectionDefinitions: {
   type: AccountType
@@ -102,6 +105,12 @@ export default function AccountList({
   const [viewMode, setViewMode] = useState<ViewMode>('accounts')
   const [filterType, setFilterType] = useState<FilterType>('all')
   const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<AccountStatusFilter>('all')
+  const [sort, setSort] = useState<AccountSort>('amount-desc')
+  const [density, setDensity] = useState<Density>(() => {
+    try { return localStorage.getItem('asset-tracker-account-density') === 'compact' ? 'compact' : 'cards' }
+    catch { return 'cards' }
+  })
   const [showAddModal, setShowAddModal] = useState(false)
   const [editAccount, setEditAccount] = useState<Account | null>(null)
   const [recordAccount, setRecordAccount] = useState<Account | null>(null)
@@ -110,6 +119,11 @@ export default function AccountList({
   const [batchMode, setBatchMode] = useState<BatchMode>(null)
   const [pendingDelete, setPendingDelete] = useState<Account | null>(null)
   const { showToast } = useToast()
+
+  useEffect(() => {
+    try { localStorage.setItem('asset-tracker-account-density', density) }
+    catch { /* 浏览器禁用存储时，布局偏好仍在本页有效。 */ }
+  }, [density])
 
   const today = localDateString()
   const latestValues = [...snapshots].reverse().find((snapshot) => snapshot.date <= today)?.values
@@ -127,12 +141,20 @@ export default function AccountList({
     ])),
     [accounts, balancesByAccount],
   )
+  const displayBalancesByAccount = useMemo(() => new Map(accounts.map((account) => [
+    account.id,
+    (balancesByAccount.get(account.id) ?? []).filter((balance) => balance.recorded_on <= today),
+  ])), [accounts, balancesByAccount, today])
+  const displaySummariesByAccount = useMemo(() => new Map(accounts.map((account) => [
+    account.id,
+    summarizeBalances(displayBalancesByAccount.get(account.id) ?? []),
+  ])), [accounts, displayBalancesByAccount])
   const freshnessByAccount = useMemo(
     () => new Map(accounts.map((account) => [
       account.id,
-      getBalanceFreshness(latestSummariesByAccount.get(account.id)?.current?.recorded_on ?? null),
+      getBalanceFreshness(latestSummariesByAccount.get(account.id)?.current?.recorded_on ?? null, today),
     ])),
-    [accounts, latestSummariesByAccount],
+    [accounts, latestSummariesByAccount, today],
   )
   const attentionAccountIds = useMemo(
     () => new Set(accounts
@@ -159,13 +181,11 @@ export default function AccountList({
     (account) => freshnessByAccount.get(account.id)?.status === 'future',
   ).length
 
-  const visibleAccounts = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
-    return accountsWithBalances.filter((account) => (
-      (filterType === 'all' || account.type === filterType)
-      && (!normalizedQuery || account.name.toLocaleLowerCase('zh-CN').includes(normalizedQuery))
-    ))
-  }, [accountsWithBalances, filterType, query])
+  const visibleAccounts = useMemo(() => selectAccounts(accountsWithBalances, freshnessByAccount, {
+    type: filterType, status: statusFilter, query, sort,
+  }), [accountsWithBalances, freshnessByAccount, filterType, statusFilter, query, sort])
+  const hasFilters = filterType !== 'all' || statusFilter !== 'all' || Boolean(query.trim())
+  const resetFilters = () => { setQuery(''); setFilterType('all'); setStatusFilter('all') }
 
   const handleDelete = async () => {
     if (!pendingDelete) return
@@ -308,7 +328,8 @@ export default function AccountList({
         )}
 
         {viewMode === 'accounts' && accounts.length > 0 && (
-          <div className="mt-5 flex min-w-0 flex-col gap-3 border-t border-slate-100 pt-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="mt-5 flex min-w-0 flex-col gap-3 border-t border-slate-100 pt-4">
+            <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex w-full min-w-0 max-w-full gap-1 overflow-x-auto pb-1 lg:w-auto" role="group" aria-label="账户类型筛选">
               <FilterButton active={filterType === 'all'} onClick={() => setFilterType('all')}>
                 全部 <span className="text-[11px] opacity-70">{accounts.length}</span>
@@ -349,6 +370,35 @@ export default function AccountList({
                 </button>
               )}
             </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-500">
+                状态
+                <select aria-label="余额状态筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AccountStatusFilter)} className="max-w-32 cursor-pointer bg-transparent text-sm font-medium text-slate-800 outline-none">
+                  <option value="all">全部状态</option>
+                  <option value="attention">待确认 ({attentionAccountIds.size})</option>
+                  <option value="fresh">近期已记录</option>
+                  <option value="missing">尚未记录</option>
+                </select>
+              </label>
+              <label className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-500">
+                排序
+                <select aria-label="账户排序" value={sort} onChange={(event) => setSort(event.target.value as AccountSort)} className="max-w-32 cursor-pointer bg-transparent text-sm font-medium text-slate-800 outline-none">
+                  <option value="amount-desc">余额从高到低</option>
+                  <option value="amount-asc">余额从低到高</option>
+                  <option value="oldest">最久未确认</option>
+                  <option value="name">账户名称</option>
+                </select>
+              </label>
+              <div className="flex rounded-xl bg-slate-100 p-1 text-xs sm:ml-auto" role="group" aria-label="账户布局">
+                <ViewButton active={density === 'cards'} onClick={() => setDensity('cards')} icon={<LayoutGrid className="h-3.5 w-3.5" />}>卡片</ViewButton>
+                <ViewButton active={density === 'compact'} onClick={() => setDensity('compact')} icon={<List className="h-3.5 w-3.5" />}>紧凑</ViewButton>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <p role="status">显示 {visibleAccounts.length} / {accounts.length} 个账户 · 筛选仅影响下方列表</p>
+              {hasFilters && <button type="button" onClick={resetFilters} className="min-h-9 cursor-pointer px-2 font-semibold text-blue-700 hover:underline">清除筛选</button>}
+            </div>
           </div>
         )}
       </div>
@@ -374,7 +424,7 @@ export default function AccountList({
             <p className="mt-1 text-sm text-slate-500">换个关键词，或清除当前筛选</p>
             <button
               type="button"
-              onClick={() => { setQuery(''); setFilterType('all') }}
+              onClick={resetFilters}
               className="mt-4 cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-700"
             >
               清除筛选
@@ -384,7 +434,6 @@ export default function AccountList({
           sectionDefinitions.map((section) => {
             const sectionAccounts = visibleAccounts
               .filter((account) => account.type === section.type)
-              .sort((left, right) => (right.latest_balance ?? -Infinity) - (left.latest_balance ?? -Infinity))
             if (sectionAccounts.length === 0) return null
             const sectionTotal = sectionAccounts.reduce((sum, account) => sum + (account.latest_balance ?? 0), 0)
 
@@ -405,16 +454,15 @@ export default function AccountList({
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className={`grid grid-cols-1 gap-3 ${density === 'cards' ? 'lg:grid-cols-2' : ''}`}>
                   {sectionAccounts.map((account) => {
-                    const accountBalances = balancesByAccount.get(account.id) ?? []
-                    const displayBalances = accountBalances.filter((balance) => balance.recorded_on <= today)
+                    const displayBalances = displayBalancesByAccount.get(account.id) ?? []
                     return (
                       <AccountCard
                         key={account.id}
                         account={account}
                         balances={displayBalances}
-                        summary={summarizeBalances(displayBalances)}
+                        summary={displaySummariesByAccount.get(account.id)!}
                         freshness={freshnessByAccount.get(account.id) ?? getBalanceFreshness(null)}
                         onRecord={() => setRecordAccount(account)}
                         onEdit={() => setEditAccount(account)}
@@ -423,6 +471,7 @@ export default function AccountList({
                         onToggleChart={() => toggleChart(account.id)}
                         showChart={expandedCharts.has(account.id)}
                         panelClass={section.panel}
+                        compact={density === 'compact'}
                       />
                     )
                   })}
@@ -467,7 +516,7 @@ export default function AccountList({
             onSaved={async () => {
               setRecordAccount(null)
               await onDataChanged()
-              showToast({ variant: 'success', title: '余额已保存', message: '资产概览已同步更新' })
+              showToast({ variant: 'success', title: '余额已保存', message: '记录已写入云端' })
             }}
           />
         )}
@@ -482,6 +531,7 @@ export default function AccountList({
         {batchMode && (
           <BatchRecordModal
             userId={userId}
+            balancesByAccount={balancesByAccount}
             accounts={batchMode === 'attention'
               ? accountsWithBalances.filter((account) => updatableAccountIds.has(account.id))
               : accountsWithBalances}
@@ -490,7 +540,7 @@ export default function AccountList({
             onSaved={async () => {
               setBatchMode(null)
               await onDataChanged()
-              showToast({ variant: 'success', title: '余额已批量更新', message: '资产概览已同步更新' })
+              showToast({ variant: 'success', title: '余额已批量更新', message: '记录已写入云端' })
             }}
           />
         )}
@@ -520,6 +570,7 @@ function AccountCard({
   onToggleChart,
   showChart,
   panelClass,
+  compact,
 }: {
   account: AccountWithBalance
   balances: Balance[]
@@ -532,16 +583,45 @@ function AccountCard({
   onToggleChart: () => void
   showChart: boolean
   panelClass: string
+  compact: boolean
 }) {
-  const updatedToday = summary.current?.recorded_on === localDateString()
+  const updatedToday = freshness.status !== 'future' && summary.current?.recorded_on === localDateString()
   const change = summary.change
   const changeIsFavorable = change
     ? account.type === 'liability' ? change.amount <= 0 : change.amount >= 0
     : true
   const ChangeIcon = change && change.amount < 0 ? ArrowDownRight : ArrowUpRight
 
+  if (compact) {
+    return (
+      <article id={`account-${account.id}`} className="min-w-0 scroll-mt-24 rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+        <div className="grid min-w-0 gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${panelClass}`}><AccountIcon name={account.icon} className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <h4 className="truncate text-sm font-semibold text-slate-900">{account.name}</h4>
+              <p className={`mt-1 text-xs ${freshness.status === 'fresh' ? 'text-slate-500' : 'text-amber-700'}`}>
+                {freshness.status === 'future' ? '存在未来日期记录，请核对' : summary.current ? `${summary.current.recorded_on} · ${updatedToday ? '今日已更新' : `${freshness.daysSinceUpdate ?? 0} 天前`}` : '尚未记录余额'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-4 sm:block sm:text-right">
+            {account.latest_balance === null ? <span className="text-lg text-slate-400">—</span> : <Money value={account.latest_balance} className="text-lg font-bold text-slate-900" />}
+            {change && change.amount !== 0 && <p className={`text-xs ${changeIsFavorable ? 'text-emerald-700' : 'text-rose-700'}`}><Money value={change.amount} signed /> <span className="text-slate-500">较上次</span></p>}
+          </div>
+          <div className="flex items-center gap-1 border-t border-slate-100 pt-2 sm:border-0 sm:pt-0">
+            <button type="button" onClick={onRecord} className="min-h-11 flex-1 cursor-pointer rounded-xl bg-blue-50 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 sm:flex-none">更新余额</button>
+            <button type="button" onClick={onToggleChart} aria-label={`${account.name} ${showChart ? '收起' : '查看'}趋势`} aria-expanded={showChart} className={`flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl ${showChart ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'}`}><TrendingUp className="h-4 w-4" aria-hidden="true" /></button>
+            <AccountMenu accountName={account.name} onHistory={onHistory} onEdit={onEdit} onDelete={onDelete} />
+          </div>
+        </div>
+        {showChart && <div className="rounded-b-2xl border-t border-slate-100 bg-slate-50/70 p-4"><Suspense fallback={<div className="h-52 animate-pulse rounded-xl bg-slate-100" />}><TrendChart balances={balances} /></Suspense></div>}
+      </article>
+    )
+  }
+
   return (
-    <article id={`account-${account.id}`} className="scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow duration-200 hover:shadow-md">
+    <article id={`account-${account.id}`} className="min-w-0 scroll-mt-24 rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow duration-200 hover:shadow-md">
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -556,7 +636,7 @@ function AccountCard({
                     <Check className="h-3 w-3 text-emerald-600" aria-hidden="true" />
                     今日已更新
                   </>
-                ) : freshness.status === 'future' && summary.current ? (
+                ) : freshness.status === 'future' ? (
                   <>
                     <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                     记录日期晚于今天 · 请核对
@@ -581,21 +661,7 @@ function AccountCard({
             </div>
           </div>
 
-          <details className="relative">
-            <summary
-              className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden"
-              aria-label={`${account.name} 更多操作`}
-            >
-              <MoreHorizontal className="h-5 w-5" />
-            </summary>
-            <div className="absolute right-0 z-20 mt-1 w-36 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-xl shadow-slate-200/60">
-              <MenuButton icon={<History />} onClick={onHistory}>历史记录</MenuButton>
-              <MenuButton icon={<Edit3 />} onClick={onEdit}>编辑账户</MenuButton>
-              <MenuButton icon={<Trash2 />} onClick={onDelete} danger>
-                删除账户
-              </MenuButton>
-            </div>
-          </details>
+          <AccountMenu accountName={account.name} onHistory={onHistory} onEdit={onEdit} onDelete={onDelete} />
         </div>
 
         <div className="mt-6 flex items-end justify-between gap-4">
@@ -645,13 +711,43 @@ function AccountCard({
       </div>
 
       {showChart && (
-        <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-4">
+        <div className="rounded-b-2xl border-t border-slate-100 bg-slate-50/70 px-4 py-4">
           <Suspense fallback={<div className="h-52 animate-pulse rounded-xl bg-slate-100" />}>
             <TrendChart balances={balances} />
           </Suspense>
         </div>
       )}
     </article>
+  )
+}
+
+function AccountMenu({ accountName, onHistory, onEdit, onDelete }: {
+  accountName: string
+  onHistory: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <details className="relative shrink-0" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false
+    }} onKeyDown={(event) => {
+      if (event.key === 'Escape') {
+        event.currentTarget.open = false
+        event.currentTarget.querySelector('summary')?.focus()
+      }
+    }}>
+      <summary className="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 [&::-webkit-details-marker]:hidden" aria-label={`${accountName} 更多操作`}>
+        <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+      </summary>
+      <div className="absolute right-0 z-30 mt-1 w-36 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-xl shadow-slate-200/60" onClick={(event) => {
+        const details = event.currentTarget.closest('details')
+        if (details) details.open = false
+      }}>
+        <MenuButton icon={<History />} onClick={onHistory}>历史记录</MenuButton>
+        <MenuButton icon={<Edit3 />} onClick={onEdit}>编辑账户</MenuButton>
+        <MenuButton icon={<Trash2 />} onClick={onDelete} danger>删除账户</MenuButton>
+      </div>
+    </details>
   )
 }
 

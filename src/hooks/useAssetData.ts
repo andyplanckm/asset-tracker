@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessage, supabase } from '../lib/supabase'
+import { withNetworkTimeout } from '../lib/network'
 import type { Account, Balance } from '../lib/types'
 
 interface AssetDataState {
@@ -7,6 +8,8 @@ interface AssetDataState {
   accounts: Account[]
   balances: Balance[]
   loading: boolean
+  refreshing: boolean
+  lastSyncedAt: number | null
   error: string
 }
 
@@ -20,15 +23,17 @@ function createInitialState(userId: string): AssetDataState {
     accounts: [],
     balances: [],
     loading: true,
+    refreshing: false,
+    lastSyncedAt: null,
     error: '',
   }
 }
 
-async function fetchAllBalances(userId: string, isCurrentRequest: () => boolean): Promise<Balance[]> {
+async function fetchAllBalances(userId: string, signal: AbortSignal): Promise<Balance[]> {
   const balances: Balance[] = []
   let from = 0
 
-  while (isCurrentRequest()) {
+  while (!signal.aborted) {
     const { data, error } = await supabase
       .from('balances')
       .select(BALANCE_COLUMNS)
@@ -37,9 +42,10 @@ async function fetchAllBalances(userId: string, isCurrentRequest: () => boolean)
       .order('recorded_at', { ascending: true })
       .order('id', { ascending: true })
       .range(from, from + BALANCE_PAGE_SIZE - 1)
+      .abortSignal(signal)
 
     if (error) throw error
-    if (!isCurrentRequest()) return balances
+    signal.throwIfAborted()
 
     const page = data ?? []
     balances.push(...page)
@@ -54,35 +60,41 @@ async function fetchAllBalances(userId: string, isCurrentRequest: () => boolean)
 export function useAssetData(userId: string) {
   const [state, setState] = useState<AssetDataState>(() => createInitialState(userId))
   const requestId = useRef(0)
+  const activeRequest = useRef<AbortController | null>(null)
   const lastRefreshStartedAt = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
     lastRefreshStartedAt.current = Date.now()
     const currentRequest = ++requestId.current
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    activeRequest.current = controller
     const isCurrentRequest = () => currentRequest === requestId.current
 
     setState((previous) => previous.userId === userId
-      ? { ...previous, loading: true, error: '' }
+      ? { ...previous, loading: previous.lastSyncedAt === null, refreshing: previous.lastSyncedAt !== null, error: '' }
       : createInitialState(userId))
 
     try {
-      const [accountsResult, balances] = await Promise.all([
+      const [accountsResult, balances] = await withNetworkTimeout((signal) => Promise.all([
         supabase
           .from('accounts')
           .select('id,user_id,name,type,icon,created_at')
           .eq('user_id', userId)
-          .order('created_at', { ascending: false }),
-        fetchAllBalances(userId, isCurrentRequest),
-      ])
-
-      if (accountsResult.error) throw accountsResult.error
+          .order('created_at', { ascending: false })
+          .abortSignal(signal)
+          .throwOnError(),
+        fetchAllBalances(userId, signal),
+      ]), controller.signal)
       if (!isCurrentRequest()) return
 
       setState({
         userId,
-        accounts: accountsResult.data,
+        accounts: accountsResult.data ?? [],
         balances,
         loading: false,
+        refreshing: false,
+        lastSyncedAt: Date.now(),
         error: '',
       })
     } catch (error) {
@@ -90,8 +102,12 @@ export function useAssetData(userId: string) {
       setState((previous) => ({
         ...(previous.userId === userId ? previous : createInitialState(userId)),
         loading: false,
+        refreshing: false,
         error: errorMessage(error, '资产数据加载失败，请稍后重试'),
       }))
+    } finally {
+      controller.abort()
+      if (activeRequest.current === controller) activeRequest.current = null
     }
   }, [userId])
 
@@ -100,6 +116,8 @@ export function useAssetData(userId: string) {
 
     return () => {
       requestId.current += 1
+      activeRequest.current?.abort()
+      activeRequest.current = null
     }
   }, [refresh])
 
@@ -124,6 +142,8 @@ export function useAssetData(userId: string) {
     accounts: visibleState.accounts,
     balances: visibleState.balances,
     loading: visibleState.loading,
+    refreshing: visibleState.refreshing,
+    lastSyncedAt: visibleState.lastSyncedAt,
     error: visibleState.error,
     refresh,
   }
