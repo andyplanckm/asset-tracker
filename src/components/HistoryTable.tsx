@@ -30,8 +30,8 @@ const PAGE_SIZE = 30
 
 const groupDefinitions: { type: AccountType; label: string }[] = [
   { type: 'asset', label: '灵活取用' },
-  { type: 'investment', label: '投资' },
   { type: 'liability', label: '负债' },
+  { type: 'investment', label: '投资' },
   { type: 'pnl', label: '投资盈亏' },
 ]
 
