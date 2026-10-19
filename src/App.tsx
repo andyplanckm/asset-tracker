@@ -3,12 +3,12 @@ import type { Session } from '@supabase/supabase-js'
 import Auth from './components/Auth'
 import LoadingScreen from './components/LoadingScreen'
 import ResetPassword from './components/ResetPassword'
-import { errorMessage, supabase } from './lib/supabase'
+import { errorMessage, supabase, supabaseDashboardUrl } from './lib/supabase'
 
 const AuthenticatedApp = lazy(() => import('./components/AuthenticatedApp'))
 const SESSION_INITIALIZATION_TIMEOUT_MS = 15_000
 const SESSION_INITIALIZATION_TIMEOUT_MESSAGE =
-  '连接登录服务超时，请检查网络或在 Supabase 控制台恢复项目后重试'
+  '登录服务暂时没有响应。请检查网络后重试，或联系网站管理员检查服务状态。'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -19,12 +19,11 @@ export default function App() {
 
   useEffect(() => {
     let isActive = true
-    let initializationComplete = false
+    let authEventVersion = 0
 
     const settleInitialSession = (nextSession: Session | null, nextError = '') => {
-      if (!isActive || initializationComplete) return
+      if (!isActive) return
 
-      initializationComplete = true
       window.clearTimeout(initializationTimer)
       setSession(nextSession)
       setInitializationError(nextError)
@@ -36,17 +35,13 @@ export default function App() {
     }, SESSION_INITIALIZATION_TIMEOUT_MS)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // INITIAL_SESSION may contain null even when SDK initialization failed.
+      // getSession supplies the explicit error and settles this initial read.
       if (!isActive || event === 'INITIAL_SESSION') return
+      authEventVersion += 1
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
-
-      if (!initializationComplete) {
-        settleInitialSession(session)
-        return
-      }
-
-      setSession(session)
-      setInitializationError('')
-      setLoading(false)
+      if (event === 'SIGNED_OUT') setPasswordRecovery(false)
+      settleInitialSession(session)
     })
 
     const initializeSession = async () => {
@@ -54,9 +49,13 @@ export default function App() {
         const { data, error } = await supabase.auth.getSession()
         if (error) throw error
 
-        settleInitialSession(data.session)
+        // A late result can recover after the timeout, but cannot replace a
+        // newer sign-in/sign-out/password-recovery event.
+        if (authEventVersion === 0) settleInitialSession(data.session)
       } catch (error) {
-        settleInitialSession(null, errorMessage(error, '登录状态加载失败，请检查网络后重试'))
+        if (authEventVersion === 0) {
+          settleInitialSession(null, errorMessage(error, '登录状态加载失败，请检查网络后重试'))
+        }
       }
     }
 
@@ -98,6 +97,16 @@ export default function App() {
           >
             重新连接
           </button>
+          {supabaseDashboardUrl && (
+            <a
+              href={supabaseDashboardUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 block text-xs text-slate-500 underline underline-offset-4 hover:text-blue-600"
+            >
+              管理员：检查后端服务状态
+            </a>
+          )}
         </section>
       </main>
     )

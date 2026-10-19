@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './database.types'
 import { localNoonTimestamp } from './domain'
+import { fetchWithTimeout, getSupabaseDashboardUrl } from './network'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -9,7 +10,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('请在 .env 文件中配置 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY')
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey)
+export const supabaseDashboardUrl = getSupabaseDashboardUrl(supabaseUrl)
+
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  global: { fetch: fetchWithTimeout },
+})
 
 /** 将 YYYY-MM-DD 转为中国时区当天中午的 ISO 字符串，和业务日期规则保持一致。 */
 export function noonISO(dateStr: string): string {
@@ -54,9 +59,13 @@ export async function upsertBalance(
 }
 
 export function errorMessage(error: unknown, fallback = '操作失败，请重试'): string {
-  if (!(error instanceof Error) || !error.message) return fallback
+  const rawMessage = typeof error === 'object' && error !== null && 'message' in error
+    ? error.message
+    : undefined
+  if (typeof rawMessage !== 'string' || !rawMessage) return fallback
 
-  const message = error.message.toLowerCase()
+  const message = rawMessage.toLowerCase()
+  if (message.includes('timed out') || message.includes('timeout')) return '连接服务超时，请检查网络后重试'
   if (message.includes('invalid login credentials')) return '邮箱或密码不正确，请重新输入'
   if (message.includes('email not confirmed')) return '邮箱尚未验证，请先查看确认邮件'
   if (message.includes('user already registered')) return '该邮箱已经注册，请直接登录'

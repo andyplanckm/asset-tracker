@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Download, Info, Trash2, X } from 'lucide-react'
+import { usePrivacyMode } from '../contexts/PrivacyContext'
 import { isValidAmount, localDateString, type DailySnapshot } from '../lib/domain'
 import { errorMessage, supabase, upsertBalance } from '../lib/supabase'
 import type { Account, AccountType } from '../lib/types'
@@ -37,9 +38,12 @@ const groupDefinitions: { type: AccountType; label: string }[] = [
 export default function HistoryTable({ userId, accounts, snapshots, onChanged }: Props) {
   const [editing, setEditing] = useState<EditingCell | null>(null)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [error, setError] = useState('')
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
+  const [confirmExport, setConfirmExport] = useState(false)
+  const { amountsHidden } = usePrivacyMode()
   const { showToast } = useToast()
   const rows = useMemo(() => [...snapshots].reverse(), [snapshots])
   const visibleRows = rows.slice(0, visibleCount)
@@ -67,6 +71,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
   )
 
   const startEdit = (date: string, accountId: string, effectiveAmount: number | undefined) => {
+    if (savingRef.current) return
     setEditing({
       date,
       accountId,
@@ -76,7 +81,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
   }
 
   const handleEditSave = async () => {
-    if (!editing) return
+    if (!editing || savingRef.current) return
     const account = accountMap.get(editing.accountId)
     const amount = Number(editing.amount)
     if (!account) {
@@ -90,6 +95,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
 
     const snapshot = snapshots.find((item) => item.date === editing.date)
     const existingRecord = snapshot?.records.get(editing.accountId)
+    savingRef.current = true
     setSaving(true)
     setError('')
 
@@ -113,6 +119,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
     } catch (saveError: unknown) {
       setError(errorMessage(saveError, '余额更新失败，请重试'))
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -198,8 +205,10 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
             step="0.01"
             min={account.type === 'pnl' ? undefined : 0}
             value={editing.amount}
+            disabled={saving}
             onChange={(event) => setEditing({ ...editing, amount: event.target.value })}
             onKeyDown={(event) => {
+              if (savingRef.current) return
               if (event.key === 'Enter') void handleEditSave()
               if (event.key === 'Escape') setEditing(null)
             }}
@@ -220,6 +229,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
           <button
             type="button"
             onClick={() => { setEditing(null); setError('') }}
+            disabled={saving}
             aria-label="取消"
             className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
@@ -233,6 +243,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
       <button
         type="button"
         onClick={() => startEdit(row.date, account.id, effectiveAmount)}
+        disabled={saving}
         title={isRecordedToday ? '点击编辑当日记录' : '当前沿用上次余额，点击添加当日记录'}
         className={`min-h-10 cursor-pointer rounded-lg px-2 text-right text-sm tabular-nums transition hover:bg-slate-100 ${
           effectiveAmount === undefined
@@ -267,7 +278,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
             </p>
             <button
               type="button"
-              onClick={handleExportCsv}
+              onClick={() => amountsHidden ? setConfirmExport(true) : handleExportCsv()}
               title="导出包含完整原始金额的 CSV 文件"
               aria-label="导出原始 CSV，文件包含完整金额"
               className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
@@ -323,7 +334,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
                   <button
                     type="button"
                     onClick={() => setPendingDelete({ date: row.date, ids: recordIds })}
-                    disabled={recordIds.length === 0}
+                    disabled={saving || recordIds.length === 0}
                     className="mt-3 flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-rose-50 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -397,7 +408,7 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
                       <button
                         type="button"
                         onClick={() => setPendingDelete({ date: row.date, ids: recordIds })}
-                        disabled={recordIds.length === 0}
+                        disabled={saving || recordIds.length === 0}
                         className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-30"
                         title="删除该日实际记录"
                         aria-label={`删除 ${row.date} 的实际记录`}
@@ -425,6 +436,15 @@ export default function HistoryTable({ userId, accounts, snapshots, onChanged }:
         )}
       </div>
 
+      <ConfirmDialog
+        open={confirmExport}
+        onClose={() => setConfirmExport(false)}
+        onConfirm={() => { handleExportCsv(); setConfirmExport(false) }}
+        title="导出包含真实金额的文件？"
+        description="你当前已隐藏页面金额，但 CSV 会包含账户名称和完整原始金额。请确认下载环境安全。"
+        confirmLabel="确认导出"
+        tone="warning"
+      />
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
